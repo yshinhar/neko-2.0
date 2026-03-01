@@ -1,0 +1,1113 @@
+# =============================================================================
+# neko.pyw — Minimal Automation Companion  (v6)
+# =============================================================================
+
+import tkinter as tk
+import tkinter.ttk as ttk
+import tkinter.filedialog as filedialog
+import threading
+import time
+import random
+import os
+import json
+import datetime
+import subprocess
+import webbrowser
+import ctypes
+import pygame
+import keyboard
+import psutil
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+current_dir      = os.path.dirname(os.path.abspath(__file__))
+UTILS_DIR        = os.path.join(current_dir, "neko_utils")
+AUTOMATIONS_FILE = os.path.join(UTILS_DIR, "automations.json")
+HISTORY_FILE     = os.path.join(UTILS_DIR, "history.json")
+
+pygame.mixer.init()
+meow      = pygame.mixer.Sound(os.path.join(UTILS_DIR, "meow.mp3"))
+meow_low  = pygame.mixer.Sound(os.path.join(UTILS_DIR, "meow_low.wav"))
+meow_high = pygame.mixer.Sound(os.path.join(UTILS_DIR, "meow_high.wav"))
+purr      = pygame.mixer.Sound(os.path.join(UTILS_DIR, "purr.mp3"))
+
+def sound_meow():
+    random.choice([meow, meow_low, meow_high]).play()
+
+# ---------------------------------------------------------------------------
+# Data model helpers
+# ---------------------------------------------------------------------------
+def _migrate(data):
+    for a in data:
+        t = a.get("trigger", {})
+        if t.get("type") == "neko_click":
+            t["type"] = "neko_left_click"
+    return data
+
+def load_automations():
+    if os.path.exists(AUTOMATIONS_FILE):
+        try:
+            with open(AUTOMATIONS_FILE, "r", encoding="utf-8") as f:
+                return _migrate(json.load(f))
+        except Exception:
+            pass
+    return []
+
+def save_automations(data):
+    os.makedirs(UTILS_DIR, exist_ok=True)
+    with open(AUTOMATIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+automations = load_automations()
+
+def get_trigger_types(auto):
+    t = auto.get("trigger", {})
+    if t.get("type") == "multi":
+        return t.get("types", [])
+    return [t.get("type", "")]
+
+def get_trigger_value(auto):
+    return auto.get("trigger", {}).get("value", "")
+
+# ---------------------------------------------------------------------------
+# History
+# ---------------------------------------------------------------------------
+def log_history(name, trigger_type):
+    os.makedirs(UTILS_DIR, exist_ok=True)
+    entry = {"ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+             "name": name, "trigger": trigger_type}
+    history = []
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            pass
+    history.append(entry)
+    history = history[-200:]
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2, ensure_ascii=False)
+
+# ---------------------------------------------------------------------------
+# Action execution
+# ---------------------------------------------------------------------------
+def _find_window_by_exe(exe_name):
+    """Return hwnd of a window matching exe name, or None."""
+    import ctypes
+    found = [None]
+    exe_lower = exe_name.lower().replace(".exe", "")
+    EnumWindows = ctypes.windll.user32.EnumWindows
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
+    GetWindowThreadProcessId = ctypes.windll.user32.GetWindowThreadProcessId
+    IsWindowVisible = ctypes.windll.user32.IsWindowVisible
+
+    def callback(hwnd, lParam):
+        if IsWindowVisible(hwnd):
+            pid = ctypes.c_ulong()
+            GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            try:
+                p = psutil.Process(pid.value)
+                if exe_lower in p.name().lower():
+                    found[0] = hwnd
+                    return False
+            except Exception:
+                pass
+        return True
+
+    EnumWindows(EnumWindowsProc(callback), 0)
+    return found[0]
+
+def run_action(action):
+    atype  = action.get("type")
+    avalue = action.get("value", "")
+    try:
+        if atype == "open_url":
+            webbrowser.open(avalue)
+
+        elif atype == "open_app":
+            subprocess.Popen(avalue, shell=True)
+
+        elif atype == "set_volume":
+            vol = max(0, min(100, int(avalue)))
+            set_ok = False
+            try:
+                from ctypes import cast, POINTER
+                from comtypes import CLSCTX_ALL
+                from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+                devices = AudioUtilities.GetSpeakers()
+                iface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+                cast(iface, POINTER(IAudioEndpointVolume)).SetMasterVolumeLevelScalar(vol/100.0, None)
+                set_ok = True
+            except Exception:
+                pass
+            if not set_ok:
+                nircmd = os.path.join(current_dir, "nircmd.exe")
+                if os.path.exists(nircmd):
+                    subprocess.Popen([nircmd, "setsysvolume", str(int(vol/100*65535))])
+                    set_ok = True
+            if not set_ok:
+                subprocess.Popen(
+                    ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                     f"$w=New-Object -ComObject WScript.Shell;"
+                     f"1..50|%{{$w.SendKeys([char]174)}};"
+                     f"1..[math]::Round({vol}/2)|%{{$w.SendKeys([char]175)}}"],
+                    shell=False)
+
+        elif atype == "run_shell":
+            subprocess.Popen(avalue, shell=True)
+
+        elif atype == "wait":
+            secs = max(0, float(avalue))
+            time.sleep(secs)
+
+        elif atype == "close_app":
+            # Resolve .lnk shortcuts to the real exe name
+            exe = os.path.basename(avalue)
+            if exe.lower().endswith(".lnk"):
+                try:
+                    import winshell
+                    lnk = winshell.shortcut(avalue)
+                    exe = os.path.basename(lnk.path)
+                except Exception:
+                    # fallback: strip .lnk and try taskkill by window title via powershell
+                    exe = exe[:-4] + ".exe"
+            # Try graceful WM_CLOSE first
+            hwnd = _find_window_by_exe(exe)
+            if hwnd:
+                ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+            else:
+                # taskkill without /F — graceful
+                subprocess.Popen(["taskkill", "/IM", exe], shell=False)
+
+        elif atype == "notification":
+            # Show a neko-styled notification window on the main thread
+            root.after(0, lambda msg=avalue: show_notification(msg))
+
+    except Exception as e:
+        print(f"[neko] action error ({atype}): {e}")
+
+def run_automation(automation, trigger_type="manual"):
+    def _run():
+        log_history(automation.get("name", "?"), trigger_type)
+        if trigger_type not in ("manual", "neko_left_click",
+                                "neko_right_click", "neko_hold_pick"):
+            root.after(0, sound_meow)
+        for action in automation.get("actions", []):
+            run_action(action)
+    threading.Thread(target=_run, daemon=True).start()
+
+# ---------------------------------------------------------------------------
+# Keybind registry
+# ---------------------------------------------------------------------------
+_registered_hotkeys: list = []
+
+def register_keybind_triggers():
+    global _registered_hotkeys
+    for hk in _registered_hotkeys:
+        try:
+            keyboard.remove_hotkey(hk)
+        except Exception:
+            pass
+    _registered_hotkeys = []
+    for auto in automations:
+        if "keybind" in get_trigger_types(auto):
+            hk = get_trigger_value(auto)
+            if hk:
+                try:
+                    keyboard.add_hotkey(hk, lambda a=auto: run_automation(a, "keybind"))
+                    _registered_hotkeys.append(hk)
+                except Exception as e:
+                    print(f"[neko] keybind error ({hk}): {e}")
+
+register_keybind_triggers()
+
+# ---------------------------------------------------------------------------
+# Time trigger
+# ---------------------------------------------------------------------------
+def time_trigger_loop():
+    fired: set = set()
+    while True:
+        time.sleep(15)
+        now = datetime.datetime.now().strftime("%H:%M")
+        for i, auto in enumerate(automations):
+            if "time_of_day" in get_trigger_types(auto):
+                if get_trigger_value(auto) == now:
+                    key = (i, now)
+                    if key not in fired:
+                        fired.add(key)
+                        run_automation(auto, "time_of_day")
+        fired = {k for k in fired if k[1] == now}
+
+threading.Thread(target=time_trigger_loop, daemon=True).start()
+
+# ---------------------------------------------------------------------------
+# App-opened / app-closed trigger watcher
+# ---------------------------------------------------------------------------
+_prev_procs: set = set()
+
+def app_watch_loop():
+    global _prev_procs
+    _prev_procs = {p.name().lower() for p in psutil.process_iter(['name'])}
+    while True:
+        time.sleep(3)
+        try:
+            cur_procs = {p.name().lower() for p in psutil.process_iter(['name'])}
+        except Exception:
+            continue
+        opened = cur_procs - _prev_procs
+        closed = _prev_procs - cur_procs
+        for auto in automations:
+            trig_types = get_trigger_types(auto)
+            val = get_trigger_value(auto).lower()
+            if "app_opened" in trig_types:
+                if any(val in name for name in opened):
+                    run_automation(auto, "app_opened")
+            if "app_closed" in trig_types:
+                if any(val in name for name in closed):
+                    run_automation(auto, "app_closed")
+        _prev_procs = cur_procs
+
+threading.Thread(target=app_watch_loop, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# Cat sprites
+# ---------------------------------------------------------------------------
+facing_right           = True
+mouse_tracking_enabled = True
+last_interaction_time  = time.time()
+hop_counter = hop_dx = hop_dy = 0
+
+normal_cat_l  = "╱|    \n(˚˕ 。7\n|、˜〵\n    じしˍ,)ノ"
+sleepy_cat_l  = "     zZ\n╱|    \n(-ㅅ- 7\n       (ˍ,     ˜ˍ,)ノ"
+hover_cat_l   = "╱|    \n(`˕ 。7\n|、˜〵\n    じしˍ,)ノ"
+pressed_cat_l = "╱|    \n(`ˎ - 7\n|、˜〵\n    じしˍ,)ノ"
+normal_cat_r  = "    |╲\n< 。˕˚)\n/ ˜     |\nヽ(,ˍりり    "
+sleepy_cat_r  = "     zZ\n╱|    \n(-ㅅ- 7\n       (ˍ,     ˜ˍ,)ノ"
+hover_cat_r   = "    |╲\n< 。˕´)\n/ ˜     |\nヽ(,ˍりり    "
+pressed_cat_r = "    |╲\n< - ˎ´)\n/ ˜     |\nヽ(,ˍりり    "
+def get_cat_sprite(state):
+    sprites = {
+        "normal":  (normal_cat_r,  normal_cat_l),
+        "sleepy":  (sleepy_cat_r,  sleepy_cat_l),
+        "hover":   (hover_cat_r,   hover_cat_l),
+        "pressed": (pressed_cat_r, pressed_cat_l),
+    }
+    r, l = sprites.get(state, sprites["normal"])
+    return r if facing_right else l
+
+# ---------------------------------------------------------------------------
+# Root window
+# ---------------------------------------------------------------------------
+root = tk.Tk()
+root.title("")
+root.geometry("200x148")
+root.attributes("-topmost", True)
+root.resizable(False, False)
+root.configure(bg="#202020")
+
+CAT_W   = 200
+CAT_H   = 148
+PANEL_H = 240
+
+screen_w = root.winfo_screenwidth()
+screen_h = root.winfo_screenheight()
+
+# ---------------------------------------------------------------------------
+# Notification window
+# ---------------------------------------------------------------------------
+def show_notification(message):
+    sound_meow()
+    n = tk.Toplevel(root)
+    n.title("")
+    n.configure(bg="#202020")
+    n.attributes("-topmost", True)
+    n.resizable(False, False)
+    try:
+        n.iconbitmap(os.path.join(UTILS_DIR, "icon.ico"))
+    except Exception:
+        pass
+    # Position top-right of screen
+    n.update_idletasks()
+    w, h = 280, 110
+    n.geometry(f"{w}x{h}+{screen_w - w - 20}+{40}")
+
+    tk.Label(n, text=message, bg="#202020", fg="white",
+             font=("Arial", 11), wraplength=250, justify="center",
+             padx=14, pady=14).pack(expand=True)
+    tk.Button(n, text="Close", command=n.destroy,
+              bg="white", fg="black", bd=0, font=("Arial", 10), padx=10,
+              activebackground="#ddd", cursor="hand2").pack(pady=(0, 10))
+
+# ---------------------------------------------------------------------------
+# Styled dialog helpers
+# ---------------------------------------------------------------------------
+def _style_win(win):
+    win.title("")
+    win.configure(bg="#202020")
+    win.attributes("-topmost", True)
+    win.resizable(False, False)
+    try:
+        win.iconbitmap(os.path.join(UTILS_DIR, "icon.ico"))
+    except Exception:
+        pass
+
+def neko_confirm(message):
+    result = [False]
+    d = tk.Toplevel(root)
+    _style_win(d)
+    d.grab_set()
+    tk.Label(d, text=message, bg="#202020", fg="white",
+             font=("Arial", 11), wraplength=220, justify="center",
+             padx=14, pady=10).pack()
+    r = tk.Frame(d, bg="#202020")
+    r.pack(pady=(0, 10))
+    def _yes():
+        result[0] = True
+        d.destroy()
+    tk.Button(r, text="Yes", command=_yes,
+              bg="white", fg="black", bd=0, font=("Arial", 11), padx=12,
+              activebackground="#ddd", cursor="hand2").pack(side="left", padx=6)
+    tk.Button(r, text="No", command=d.destroy,
+              bg="#444", fg="white", bd=0, font=("Arial", 11), padx=10,
+              activebackground="#666", cursor="hand2").pack(side="left", padx=6)
+    d.wait_window()
+    return result[0]
+
+def neko_warn(message, parent=None):
+    d = tk.Toplevel(parent or root)
+    _style_win(d)
+    d.grab_set()
+    tk.Label(d, text=message, bg="#202020", fg="white",
+             font=("Arial", 11), wraplength=220, justify="center",
+             padx=14, pady=10).pack()
+    tk.Button(d, text="OK", command=d.destroy,
+              bg="white", fg="black", bd=0, font=("Arial", 11), padx=14,
+              activebackground="#ddd", cursor="hand2").pack(pady=(0, 10))
+    d.wait_window()
+
+# ---------------------------------------------------------------------------
+# Automation editor  (defined BEFORE build_panel)
+# ---------------------------------------------------------------------------
+TRIGGER_LABELS = {
+    "neko_left_click":  "🖱  Left click",
+    "neko_right_click": "🖱  Right click",
+    "keybind":          "⌨  Keyboard shortcut",
+    "app_opened":       "📂  Application opened",
+    "app_closed":       "📂  Application closed",
+    "time_of_day":      "🕐  Time of day (HH:MM)",
+}
+ACTION_LABELS = {
+    "open_url":      "🌐  Open URL",
+    "open_app":      "📂  Open application",
+    "close_app":     "✖  Close app",
+    "set_volume":    "🔊  Set volume (0-100)",
+    "run_shell":     "⚡  Run shell command",
+    "wait":          "⏳  Wait X seconds",
+    "notification":  "🔔  Show notification",
+}
+_d2a = {v: k for k, v in ACTION_LABELS.items()}
+
+# Which triggers need a value field
+TRIG_NEEDS_VALUE = {"keybind", "app_opened", "app_closed", "time_of_day"}
+# Which actions need a value field (fullscreen_focused needs none)
+ACTION_NO_VALUE  = set()
+ACTION_NEEDS_APP = {"open_app", "close_app"}
+
+def open_editor(edit_idx, on_done):
+    existing = automations[edit_idx] if edit_idx is not None else None
+
+    win = tk.Toplevel(root)
+    _style_win(win)
+    win.grab_set()
+
+    pad = {"padx": 8, "pady": 3}
+
+    def lbl(parent, txt):
+        return tk.Label(parent, text=txt, bg="#202020", fg="#666",
+                        font=("Arial", 9), anchor="w")
+
+    def ent(parent, default="", width=28):
+        e = tk.Entry(parent, font=("Arial", 11), width=width,
+                     bg="#2B2B2B", fg="white",
+                     insertbackground="white", bd=0, relief="flat",
+                     highlightthickness=1, highlightcolor="#444",
+                     highlightbackground="#333")
+        e.insert(0, default)
+        return e
+
+    # ── Name ──────────────────────────────────────────────────────────────
+    lbl(win, "NAME").pack(fill="x", **pad)
+    name_ent = ent(win, existing["name"] if existing else "")
+    name_ent.pack(fill="x", **pad)
+
+    # ── WHEN — listbox + add row ──────────────────────────────────────────
+    _d2t_local = {v: k for k, v in TRIGGER_LABELS.items()}
+
+    # Rebuild initial trigger list from existing
+    if existing:
+        trig = existing["trigger"]
+        if trig.get("type") == "multi":
+            # Each type shares the same value (keybind/time/app value)
+            ex_trig_list = [{"type": t, "value": trig.get("value", "")}
+                            for t in trig.get("types", [])]
+        else:
+            ex_trig_list = [{"type": trig["type"], "value": trig.get("value", "")}]
+    else:
+        ex_trig_list = []
+    triggers_data = list(ex_trig_list)
+
+    lbl(win, "WHEN  (double-click to remove)").pack(fill="x", **pad)
+    trigs_lb = tk.Listbox(win, height=2,
+                          bg="#2B2B2B", fg="white", font=("Arial", 10),
+                          selectbackground="#444", bd=0,
+                          highlightthickness=0, activestyle="none")
+    trigs_lb.pack(fill="x", padx=8, pady=2)
+
+    def refresh_trigs():
+        trigs_lb.delete(0, tk.END)
+        for t in triggers_data:
+            label = TRIGGER_LABELS.get(t["type"], t["type"])
+            val   = f": {t['value']}" if t.get("value") else ""
+            trigs_lb.insert(tk.END, f"  {label}{val}")
+
+    refresh_trigs()
+    trigs_lb.bind("<Double-Button-1>",
+                  lambda e: (triggers_data.pop(trigs_lb.curselection()[0]),
+                             refresh_trigs()) if trigs_lb.curselection() else None)
+
+    trig_add_row = tk.Frame(win, bg="#202020")
+    trig_add_row.pack(fill="x", padx=8, pady=(2, 4))
+
+    trig_cb = ttk.Combobox(trig_add_row, values=list(TRIGGER_LABELS.values()),
+                            state="readonly", width=18, font=("Arial", 10))
+    trig_cb.set(list(TRIGGER_LABELS.values())[0])
+    trig_cb.pack(side="left", padx=(0, 4))
+
+    # Order: [value] [+] [folder]  — same as DO row
+    trig_val_ent = ent(trig_add_row, "", width=12)
+
+    def _trig_strip_path(event=None):
+        key = _d2t_local.get(trig_cb.get(), "")
+        if key in ("app_opened", "app_closed"):
+            val = trig_val_ent.get()
+            base = os.path.basename(val.strip().strip('"').strip("'"))
+            if base != val:
+                trig_val_ent.delete(0, tk.END)
+                trig_val_ent.insert(0, base)
+
+    trig_val_ent.bind("<<Paste>>", lambda e: trig_val_ent.after(10, _trig_strip_path))
+    trig_val_ent.bind("<FocusOut>", lambda e: _trig_strip_path())
+
+    def do_add_trig():
+        key = _d2t_local.get(trig_cb.get(), "")
+        if not key:
+            return
+        val = trig_val_ent.get().strip() if key in TRIG_NEEDS_VALUE else ""
+        if key in TRIG_NEEDS_VALUE and not val:
+            neko_warn(f"Enter a value for {TRIGGER_LABELS[key]}.", parent=win)
+            return
+        if any(t["type"] == key for t in triggers_data):
+            neko_warn("That trigger is already added.", parent=win)
+            return
+        triggers_data.append({"type": key, "value": val})
+        trig_val_ent.delete(0, tk.END)
+        refresh_trigs()
+
+    trig_add_btn = tk.Button(trig_add_row, text="＋", command=do_add_trig,
+                             bg="#333", fg="white", bd=0, font=("Arial", 13), padx=6,
+                             activebackground="#555", cursor="hand2")
+
+    def browse_trig_app():
+        fd = tk.Toplevel(win)
+        _style_win(fd)
+        fd.withdraw()
+        path = filedialog.askopenfilename(
+            parent=fd, title="",
+            filetypes=[("Applications", "*.exe *.bat *.cmd"), ("All files", "*.*")])
+        fd.destroy()
+        if path:
+            trig_val_ent.delete(0, tk.END)
+            trig_val_ent.insert(0, os.path.basename(path))
+
+    trig_browse_btn = tk.Button(trig_add_row, text="\U0001f4c1", bd=0,
+                                bg="#202020", fg="#aaa", font=("Arial", 12),
+                                activebackground="#333", cursor="hand2",
+                                command=browse_trig_app)
+
+    def _on_trig_cb_change(event=None):
+        trig_val_ent.pack_forget()
+        trig_add_btn.pack_forget()
+        trig_browse_btn.pack_forget()
+        key = _d2t_local.get(trig_cb.get(), "")
+        if key in TRIG_NEEDS_VALUE:
+            trig_val_ent.pack(side="left", padx=(0, 2))
+        trig_add_btn.pack(side="left", padx=(0, 2))
+        if key in ("app_opened", "app_closed"):
+            trig_browse_btn.pack(side="left")
+
+    trig_cb.bind("<<ComboboxSelected>>", _on_trig_cb_change)
+    _on_trig_cb_change()
+
+    # ── DO — actions listbox ──────────────────────────────────────────────
+    lbl(win, "DO  (double-click row to remove)").pack(fill="x", **pad)
+    actions_data = list(existing["actions"]) if existing else []
+
+    acts_lb = tk.Listbox(win, height=3,
+                         bg="#2B2B2B", fg="white", font=("Arial", 10),
+                         selectbackground="#444", bd=0,
+                         highlightthickness=0, activestyle="none")
+    acts_lb.pack(fill="x", padx=8, pady=2)
+
+    def refresh_acts():
+        acts_lb.delete(0, tk.END)
+        for a in actions_data:
+            label = ACTION_LABELS.get(a["type"], a["type"])
+            val   = f": {a['value']}" if a.get("value") else ""
+            acts_lb.insert(tk.END, f"  {label}{val}")
+
+    refresh_acts()
+    acts_lb.bind("<Double-Button-1>",
+                 lambda e: (actions_data.pop(acts_lb.curselection()[0]),
+                            refresh_acts()) if acts_lb.curselection() else None)
+
+    act_add_row = tk.Frame(win, bg="#202020")
+    act_add_row.pack(fill="x", padx=8, pady=(2, 6))
+
+    act_cb = ttk.Combobox(act_add_row, values=list(ACTION_LABELS.values()),
+                          state="readonly", width=18, font=("Arial", 10))
+    act_cb.set(list(ACTION_LABELS.values())[0])
+    act_cb.pack(side="left", padx=(0, 4))
+
+    act_val_ent = ent(act_add_row, "", width=9)
+    act_val_ent.pack(side="left")
+
+    def _act_strip_path(event=None):
+        """Strip full path to basename for app actions."""
+        key = _d2a.get(act_cb.get(), act_cb.get())
+        if key in ACTION_NEEDS_APP:
+            val = act_val_ent.get()
+            base = os.path.basename(val.strip().strip('"').strip("'"))
+            if base != val:
+                act_val_ent.delete(0, tk.END)
+                act_val_ent.insert(0, base)
+
+    act_val_ent.bind("<<Paste>>", lambda e: act_val_ent.after(10, _act_strip_path))
+    act_val_ent.bind("<FocusOut>", lambda e: _act_strip_path())
+
+    # 📁 browse button — for open_app / try_close / kill
+    def browse_app():
+        fd = tk.Toplevel(win)
+        _style_win(fd)
+        fd.withdraw()
+        path = filedialog.askopenfilename(
+            parent=fd, title="",
+            filetypes=[("Applications", "*.exe *.bat *.cmd *.lnk"),
+                       ("All files", "*.*")])
+        fd.destroy()
+        if path:
+            act_val_ent.delete(0, tk.END)
+            act_val_ent.insert(0, os.path.basename(path))
+
+    browse_btn = tk.Button(act_add_row, text="📁", bd=0,
+                           bg="#202020", fg="#aaa", font=("Arial", 12),
+                           activebackground="#333", cursor="hand2",
+                           command=browse_app)
+
+    def _update_act_row(event=None):
+        key = _d2a.get(act_cb.get(), act_cb.get())
+        if key in ACTION_NO_VALUE:
+            act_val_ent.delete(0, tk.END)
+            act_val_ent.pack_forget()
+            browse_btn.pack_forget()
+        else:
+            act_val_ent.pack(side="left")
+            if key in ACTION_NEEDS_APP:
+                browse_btn.pack(side="left", padx=2)
+            else:
+                browse_btn.pack_forget()
+
+    act_cb.bind("<<ComboboxSelected>>", _update_act_row)
+    _update_act_row()
+
+    def do_add_act():
+        key = _d2a.get(act_cb.get(), act_cb.get())
+        if key in ACTION_NO_VALUE:
+            actions_data.append({"type": key, "value": ""})
+            refresh_acts()
+            return
+        val = act_val_ent.get().strip()
+        if not val:
+            neko_warn("Enter a value.", parent=win)
+            return
+        actions_data.append({"type": key, "value": val})
+        act_val_ent.delete(0, tk.END)
+        refresh_acts()
+
+    tk.Button(act_add_row, text="＋", command=do_add_act,
+              bg="#333", fg="white", bd=0, font=("Arial", 13), padx=6,
+              activebackground="#555", cursor="hand2").pack(side="left", padx=4)
+
+    # ── Save / Cancel ──────────────────────────────────────────────────────
+    tk.Frame(win, bg="#333", height=1).pack(fill="x", padx=8, pady=6)
+    bot_row = tk.Frame(win, bg="#202020")
+    bot_row.pack(fill="x", padx=8, pady=(0, 8))
+
+    def do_save():
+        name = name_ent.get().strip()
+        if not name:
+            neko_warn("Enter a name.", parent=win)
+            return
+        if not triggers_data:
+            neko_warn("Add at least one trigger.", parent=win)
+            return
+        types = [t["type"] for t in triggers_data]
+        val   = next((t["value"] for t in triggers_data if t.get("value")), "")
+        trigger = ({"type": types[0], "value": val}
+                   if len(types) == 1
+                   else {"type": "multi", "types": types, "value": val})
+        auto = {"name": name, "trigger": trigger, "actions": list(actions_data)}
+        if edit_idx is not None:
+            automations[edit_idx] = auto
+        else:
+            automations.append(auto)
+        save_automations(automations)
+        register_keybind_triggers()
+        win.destroy()
+        on_done()
+
+    tk.Button(bot_row, text="Save", command=do_save,
+              bg="white", fg="black", bd=0, font=("Arial", 11), padx=14,
+              activebackground="#ddd", cursor="hand2").pack(side="right", padx=2)
+    tk.Button(bot_row, text="Cancel", command=win.destroy,
+              bg="#444", fg="white", bd=0, font=("Arial", 11), padx=8,
+              activebackground="#666", cursor="hand2").pack(side="right", padx=2)
+
+    win.wait_window()
+
+# ---------------------------------------------------------------------------
+# Hold-to-pick popup
+# ---------------------------------------------------------------------------
+HOLD_MS = 500
+
+def show_click_picker(autos, trigger_type):
+    """Show selection popup when multiple automations share the same click trigger."""
+    popup = tk.Toplevel(root)
+    popup.overrideredirect(True)
+    popup.attributes("-topmost", True)
+    popup.configure(bg="#1a1a1a")
+    popup.geometry(f"+{root.winfo_x()}+{root.winfo_y() + root.winfo_height()}")
+
+    tk.Label(popup, text="  choose automation",
+             bg="#1a1a1a", fg="#555", font=("Arial", 9),
+             anchor="w").pack(fill="x", padx=6, pady=(6, 2))
+
+    for auto in autos:
+        row = tk.Frame(popup, bg="#1a1a1a")
+        row.pack(fill="x", padx=6, pady=1)
+
+        def _pick(a=auto):
+            popup.destroy()
+            run_automation(a, trigger_type)
+
+        tk.Button(row, text=auto["name"], bg="#1a1a1a", fg="white", bd=0,
+                  font=("Arial", 11), anchor="w",
+                  activebackground="#2a2a2a", cursor="hand2",
+                  command=_pick).pack(side="left", fill="x", expand=True)
+
+    popup.bind("<FocusOut>", lambda e: popup.destroy())
+    popup.focus_force()
+
+def show_neko_picker():
+    neko_autos = [a for a in automations
+                  if any(t in ("neko_left_click", "neko_right_click")
+                         for t in get_trigger_types(a))]
+    if not neko_autos:
+        return
+
+    popup = tk.Toplevel(root)
+    popup.overrideredirect(True)
+    popup.attributes("-topmost", True)
+    popup.configure(bg="#1a1a1a")
+    popup.geometry(f"+{root.winfo_x()}+{root.winfo_y() + root.winfo_height()}")
+
+    tk.Label(popup, text="  choose automation",
+             bg="#1a1a1a", fg="#555", font=("Arial", 9),
+             anchor="w").pack(fill="x", padx=6, pady=(6, 2))
+
+    for auto in neko_autos:
+        types = get_trigger_types(auto)
+        if "neko_left_click" in types and "neko_right_click" in types:
+            badge, badge_bg = "LR", "#555"
+        elif "neko_left_click" in types:
+            badge, badge_bg = "L",  "#444"
+        else:
+            badge, badge_bg = "R",  "#444"
+
+        row = tk.Frame(popup, bg="#1a1a1a")
+        row.pack(fill="x", padx=6, pady=1)
+        tk.Label(row, text=badge, bg=badge_bg, fg="white",
+                 font=("Arial", 8, "bold"), width=2).pack(side="left", padx=(0, 5))
+
+        def _pick(a=auto):
+            popup.destroy()
+            sound_meow()
+            run_automation(a, "neko_hold_pick")
+
+        tk.Button(row, text=auto["name"], bg="#1a1a1a", fg="white", bd=0,
+                  font=("Arial", 11), anchor="w",
+                  activebackground="#2a2a2a", cursor="hand2",
+                  command=_pick).pack(side="left", fill="x", expand=True)
+
+    popup.bind("<FocusOut>", lambda e: popup.destroy())
+    popup.focus_force()
+
+# ---------------------------------------------------------------------------
+# Panel expand / collapse
+# ---------------------------------------------------------------------------
+panel_open  = False
+panel_frame = None
+
+def toggle_panel():
+    global panel_open
+    collapse_panel() if panel_open else expand_panel()
+
+def collapse_panel():
+    global panel_open, panel_frame
+    panel_open = False
+    if panel_frame:
+        panel_frame.pack_forget()
+    root.geometry(f"{CAT_W}x{CAT_H}")
+    arrow_btn.config(text="▼")
+
+def expand_panel():
+    global panel_open
+    panel_open = True
+    root.geometry(f"{CAT_W}x{CAT_H + PANEL_H}")
+    arrow_btn.config(text="▲")
+    build_panel()
+
+# ---------------------------------------------------------------------------
+# Panel UI
+# ---------------------------------------------------------------------------
+# Badge: white square, grey letter — no colors
+def get_badge(auto):
+    types = get_trigger_types(auto)
+    LETTERS = {
+        "neko_left_click":  "L",
+        "neko_right_click": "R",
+        "keybind":          "K",
+        "time_of_day":      "T",
+        "app_opened":       "A",
+        "app_closed":       "C",
+    }
+    if len(types) > 1:
+        return "M"
+    return LETTERS.get(types[0], "?") if types else "?"
+
+def build_panel():
+    global panel_frame
+    if panel_frame:
+        panel_frame.destroy()
+
+    panel_frame = tk.Frame(root, bg="#202020")
+    panel_frame.pack(fill="both", expand=True)
+
+    bot = tk.Frame(panel_frame, bg="#202020")
+    bot.pack(side="bottom", fill="x", padx=6, pady=4)
+
+    canvas = tk.Canvas(panel_frame, bg="#202020", bd=0, highlightthickness=0)
+    sb = tk.Scrollbar(panel_frame, orient="vertical",
+                      command=canvas.yview, bg="#202020")
+    canvas.configure(yscrollcommand=sb.set)
+    sb.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+
+    rows_frame = tk.Frame(canvas, bg="#202020")
+    cwin = canvas.create_window((0, 0), window=rows_frame, anchor="nw")
+
+    def _resize(e=None):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        canvas.itemconfig(cwin, width=canvas.winfo_width())
+
+    rows_frame.bind("<Configure>", _resize)
+    canvas.bind("<Configure>", lambda e: canvas.itemconfig(cwin, width=e.width))
+    canvas.bind_all("<MouseWheel>",
+                    lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+    def build_rows():
+        for w in rows_frame.winfo_children():
+            w.destroy()
+
+        if not automations:
+            tk.Label(rows_frame, text="  no automations yet",
+                     bg="#202020", fg="#555",
+                     font=("Arial", 10)).pack(anchor="w", padx=8, pady=8)
+            return
+
+        for i, auto in enumerate(automations):
+            letter = get_badge(auto)
+            row = tk.Frame(rows_frame, bg="#2B2B2B", pady=4)
+            row.pack(fill="x", padx=4, pady=2)
+
+            # Badge — white square, dark letter
+            tk.Label(row, text=letter, bg="white", fg="#222",
+                     font=("Arial", 8, "bold"), width=2,
+                     ).pack(side="left", padx=(4, 0))
+
+            # Name — truncated to 11 chars, fixed width
+            raw  = auto["name"]
+            disp = raw if len(raw) <= 11 else raw[:11] + "…"
+            name_lbl = tk.Label(
+                row, text=f"  {disp}",
+                bg="#2B2B2B", fg="white",
+                font=("Arial", 11), anchor="w", cursor="hand2", width=11,
+            )
+            name_lbl.pack(side="left")
+            name_lbl.bind("<Button-1>",
+                          lambda e, a=auto: (sound_meow(),
+                                             run_automation(a, "manual")))
+
+            # 🗑 delete — white
+            def _del(idx=i):
+                if neko_confirm(f'Delete "{automations[idx]["name"]}"?'):
+                    automations.pop(idx)
+                    save_automations(automations)
+                    register_keybind_triggers()
+                    build_rows()
+
+            tk.Button(row, text="🗑", bd=0, bg="#2B2B2B", fg="white",
+                      font=("Arial", 12), activebackground="#333",
+                      cursor="hand2", command=_del,
+                      ).pack(side="right", padx=(0, 3))
+
+            # 📓 edit — white
+            def _edit(idx=i):
+                open_editor(idx, build_rows)
+
+            tk.Button(row, text="📓", bd=0, bg="#2B2B2B", fg="white",
+                      font=("Arial", 12), activebackground="#333",
+                      cursor="hand2", command=_edit,
+                      ).pack(side="right", padx=(0, 2))
+
+    build_rows()
+
+    tk.Button(bot, text="＋  New automation",
+              command=lambda: open_editor(None, build_rows),
+              bg="#2B2B2B", fg="white", bd=0, font=("Arial", 11), pady=4,
+              activebackground="#3a3a3a", cursor="hand2",
+              ).pack(fill="x")
+
+# ---------------------------------------------------------------------------
+# Cat button
+# ---------------------------------------------------------------------------
+_hold_timer = None
+_hold_fired = False
+
+def _cancel_hold():
+    global _hold_timer
+    if _hold_timer is not None:
+        root.after_cancel(_hold_timer)
+        _hold_timer = None
+
+def on_cat_press_left(event=None):
+    global _hold_timer, _hold_fired, last_interaction_time, mouse_tracking_enabled
+    last_interaction_time  = time.time()
+    _hold_fired            = False
+    mouse_tracking_enabled = False
+    btn.config(text=get_cat_sprite("pressed"))
+
+    def _held():
+        global _hold_fired
+        _hold_fired = True
+        btn.config(text=get_cat_sprite("normal"))
+        root.after(0, show_neko_picker)
+
+    _hold_timer = root.after(HOLD_MS, _held)
+
+def on_cat_release_left(event=None):
+    global mouse_tracking_enabled
+    mouse_tracking_enabled = True
+    _cancel_hold()
+    btn.config(text=get_cat_sprite("normal"))
+    if _hold_fired:
+        return
+    sound_meow()
+    left_autos = [a for a in automations if "neko_left_click" in get_trigger_types(a)]
+    if len(left_autos) > 1:
+        show_click_picker(left_autos, "neko_left_click")
+    elif left_autos:
+        run_automation(left_autos[0], "neko_left_click")
+
+def on_cat_press_right(event=None):
+    global last_interaction_time
+    last_interaction_time = time.time()
+    sound_meow()
+    btn.config(text=get_cat_sprite("pressed"))
+    root.after(120, lambda: btn.config(text=get_cat_sprite("normal")))
+    right_autos = [a for a in automations if "neko_right_click" in get_trigger_types(a)]
+    if len(right_autos) > 1:
+        show_click_picker(right_autos, "neko_right_click")
+    elif right_autos:
+        run_automation(right_autos[0], "neko_right_click")
+
+def on_hover(event):
+    btn.config(text=get_cat_sprite("hover"))
+
+def off_hover(event):
+    global last_interaction_time
+    last_interaction_time = time.time()
+    btn.config(text=get_cat_sprite("normal"))
+
+btn = tk.Label(root, text=get_cat_sprite("normal"),
+               font=("Arial", 14), bg="#202020", fg="white",
+               width=7, height=5, cursor="hand2")
+btn.pack(pady=(5, 0))
+btn.bind("<ButtonPress-1>",   on_cat_press_left)
+btn.bind("<ButtonRelease-1>", on_cat_release_left)
+btn.bind("<Button-3>",        on_cat_press_right)
+btn.bind("<Enter>",  on_hover)
+btn.bind("<Leave>",  off_hover)
+
+# Arrow toggle — left-aligned, tight
+arrow_btn = tk.Button(root, text="▼", command=toggle_panel,
+                      bg="#202020", fg="#555", bd=0, font=("Arial", 8),
+                      activebackground="#202020", activeforeground="#aaa",
+                      cursor="hand2", pady=0, padx=0)
+arrow_btn.pack(anchor="w", padx=8, pady=0)
+
+# ---------------------------------------------------------------------------
+# Drag with momentum
+# ---------------------------------------------------------------------------
+drag = {"active": False, "last_x": 0, "last_y": 0, "vx": 0, "vy": 0}
+window_width  = CAT_W
+window_height = CAT_H
+
+def _over(event, widget):
+    wx1, wy1 = widget.winfo_x(), widget.winfo_y()
+    return wx1 <= event.x <= wx1+widget.winfo_width() and \
+           wy1 <= event.y <= wy1+widget.winfo_height()
+
+def start_drag(event):
+    global mouse_tracking_enabled
+    if _over(event, btn) or _over(event, arrow_btn):
+        return
+    drag["active"] = True
+    mouse_tracking_enabled = False
+    drag["last_x"] = event.x_root
+    drag["last_y"] = event.y_root
+    drag["vx"] = drag["vy"] = 0
+
+def during_drag(event):
+    if not drag["active"]:
+        return
+    dx = event.x_root - drag["last_x"]
+    dy = event.y_root - drag["last_y"]
+    drag["vx"] = dx;  drag["vy"] = dy
+    drag["last_x"] = event.x_root;  drag["last_y"] = event.y_root
+    nx = max(0, min(screen_w - window_width,  root.winfo_x() + dx))
+    ny = max(0, min(screen_h - window_height, root.winfo_y() + dy))
+    root.geometry(f"+{nx}+{ny}")
+
+def release_drag(event):
+    global mouse_tracking_enabled
+    if drag["active"]:
+        drag["active"] = False
+        move_window()
+        mouse_tracking_enabled = True
+
+def move_window():
+    def step():
+        nx = root.winfo_x() + drag["vx"]
+        ny = root.winfo_y() + drag["vy"]
+        if nx < 0:                          nx = 0;                         drag["vx"] = -drag["vx"]
+        elif nx > screen_w - window_width:  nx = screen_w - window_width;  drag["vx"] = -drag["vx"]
+        if ny < 0:                          ny = 0;                         drag["vy"] = -drag["vy"]
+        elif ny > screen_h - window_height: ny = screen_h - window_height; drag["vy"] = -drag["vy"]
+        root.geometry(f"+{int(nx)}+{int(ny)}")
+        drag["vx"] *= 0.92;  drag["vy"] *= 0.92
+        if abs(drag["vx"]) > 0.1 or abs(drag["vy"]) > 0.1:
+            root.after(16, step)
+    step()
+
+root.bind("<Button-1>",        start_drag)
+root.bind("<B1-Motion>",       during_drag)
+root.bind("<ButtonRelease-1>", release_drag)
+
+# ---------------------------------------------------------------------------
+# Hop animation
+# ---------------------------------------------------------------------------
+def hop_animation():
+    global hop_counter, hop_dx, hop_dy
+    if hop_counter == 0:
+        hop_dx = random.choice([10, -10])
+        hop_dy = random.choice([10, -10])
+    hop_counter += 1
+    x, y = root.winfo_x(), root.winfo_y()
+    nx = max(0, min(screen_w-window_width,  x+hop_dx+random.randint(-2,2)))
+    ny = max(0, min(screen_h-window_height, y+hop_dy+random.randint(-2,2)))
+    root.geometry(f"+{nx}+{ny}")
+    if hop_counter < 3:
+        root.after(250, hop_animation)
+    else:
+        hop_counter = 0
+
+# ---------------------------------------------------------------------------
+# Mouse tracking
+# ---------------------------------------------------------------------------
+def track_mouse():
+    global facing_right, mouse_tracking_enabled
+    while True:
+        time.sleep(0.1)
+        if not mouse_tracking_enabled or drag["active"]:
+            continue
+        try:
+            new_facing = root.winfo_pointerx() > root.winfo_x() + root.winfo_width()//2
+            if new_facing != facing_right:
+                facing_right = new_facing
+        except Exception:
+            pass
+
+# ---------------------------------------------------------------------------
+# Inactivity loop
+# ---------------------------------------------------------------------------
+def check_inactivity():
+    global last_interaction_time
+    while True:
+        time.sleep(1)
+        t = time.time() - last_interaction_time
+        if (5 < t < 6 or 16 < t < 17) and root.state() == "normal":
+            root.after(0, hop_animation)
+        if 120 < t < 121 or 240 < t < 241:
+            sound_meow()
+        if 25 < t < 40:
+            btn.config(text=get_cat_sprite("sleepy"))
+        elif t > 40:
+            last_interaction_time = time.time()
+        else:
+            cur = btn.cget("text")
+            if cur != get_cat_sprite("hover"):
+                btn.config(text=get_cat_sprite("normal"))
+
+# ---------------------------------------------------------------------------
+# Ctrl+P hide/show
+# ---------------------------------------------------------------------------
+def hotkey_toggle():
+    purr.play()
+    root.wm_state("iconic") if root.state() == "normal" else root.deiconify()
+
+# ---------------------------------------------------------------------------
+# Start
+# ---------------------------------------------------------------------------
+threading.Thread(target=check_inactivity, daemon=True).start()
+threading.Thread(target=track_mouse,      daemon=True).start()
+
+try:
+    root.iconbitmap(os.path.join(UTILS_DIR, "icon.ico"))
+except Exception:
+    pass
+
+keyboard.add_hotkey("ctrl+p", hotkey_toggle)
+
+root.mainloop()
