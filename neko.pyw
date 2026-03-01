@@ -17,6 +17,10 @@ import ctypes
 import pygame
 import keyboard
 import psutil
+try:
+    import pyperclip
+except ImportError:
+    pyperclip = None
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -60,6 +64,33 @@ def save_automations(data):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 automations = load_automations()
+
+# ---------------------------------------------------------------------------
+# Clipboard history tracking
+# ---------------------------------------------------------------------------
+clipboard_history = []
+_clip_last = ""
+
+def _track_clipboard():
+    global clipboard_history, _clip_last
+    while True:
+        time.sleep(0.5)
+        if pyperclip is None:
+            continue
+        try:
+            text = pyperclip.paste()
+        except Exception:
+            continue
+        if text and text != _clip_last:
+            _clip_last = text
+            if text in clipboard_history:
+                clipboard_history.remove(text)
+            clipboard_history.append(text)
+            if len(clipboard_history) > 10:
+                clipboard_history.pop(0)
+
+threading.Thread(target=_track_clipboard, daemon=True).start()
+
 
 def get_trigger_types(auto):
     t = auto.get("trigger", {})
@@ -287,12 +318,16 @@ normal_cat_r  = "    |╲\n< 。˕˚)\n/ ˜     |\nヽ(,ˍりり    "
 sleepy_cat_r  = "     zZ\n╱|    \n(-ㅅ- 7\n       (ˍ,     ˜ˍ,)ノ"
 hover_cat_r   = "    |╲\n< 。˕´)\n/ ˜     |\nヽ(,ˍりり    "
 pressed_cat_r = "    |╲\n< - ˎ´)\n/ ˜     |\nヽ(,ˍりり    "
+looking_cat_l = "╱|  ?\n(˚˕ 。7\n|、˜〵\n    じしˍ,)ノ"
+looking_cat_r = "╱|  ?\n(˚˕ 。7\n|、˜〵\n    じしˍ,)ノ"
+
 def get_cat_sprite(state):
     sprites = {
         "normal":  (normal_cat_r,  normal_cat_l),
         "sleepy":  (sleepy_cat_r,  sleepy_cat_l),
         "hover":   (hover_cat_r,   hover_cat_l),
         "pressed": (pressed_cat_r, pressed_cat_l),
+        "looking": (looking_cat_r, looking_cat_l),
     }
     r, l = sprites.get(state, sprites["normal"])
     return r if facing_right else l
@@ -686,6 +721,205 @@ def open_editor(edit_idx, on_done):
 
     win.wait_window()
 
+
+# ---------------------------------------------------------------------------
+# Overlay modes: clipboard & calculator
+# ---------------------------------------------------------------------------
+_mode_open   = None   # None | "clip" | "calc"
+_mode_frame  = None
+_clip_refresh_id = None
+
+MINI_CAT = "        |╲\n  <( 。˕˚)\n    / ˜    |\nヽ( りり "
+
+def close_mode():
+    global _mode_open, _mode_frame, _clip_refresh_id
+    if _clip_refresh_id is not None:
+        root.after_cancel(_clip_refresh_id)
+        _clip_refresh_id = None
+    _mode_open = None
+    if _mode_frame:
+        _mode_frame.destroy()
+        _mode_frame = None
+    btn.pack(pady=(5, 0))
+    _bar.pack(fill="x", padx=6, pady=0)
+    root.geometry(f"{CAT_W}x{CAT_H}")
+
+def open_mode(mode):
+    global _mode_open, _mode_frame
+    if _mode_open == mode:
+        close_mode()
+        return
+    # Collapse panel if open
+    if panel_open:
+        collapse_panel()
+    # Close any existing mode first
+    if _mode_open is not None:
+        close_mode()
+
+    _mode_open = mode
+    btn.pack_forget()
+    _bar.pack_forget()
+    root.geometry("200x360" if mode == "clip" else "200x320")
+
+    _mode_frame = tk.Frame(root, bg="#202020")
+    _mode_frame.pack(fill="both", expand=True)
+
+    if mode == "clip":
+        _build_clip_ui(_mode_frame)
+    else:
+        _build_calc_ui(_mode_frame)
+
+def _mini_neko_exit(parent, sprite):
+    """Small neko at top-left that closes the mode on click."""
+    lbl = tk.Label(parent, text=sprite, bg="#202020", fg="white",
+                   font=("Arial", 10), justify="left", cursor="hand2")
+    lbl.bind("<Button-1>", lambda e: (sound_meow(), close_mode()))
+    return lbl
+
+def _build_clip_ui(frame):
+    global _clip_refresh_id
+    top = tk.Frame(frame, bg="#202020")
+    top.pack(fill="x", padx=6, pady=(6, 2))
+    _mini_neko_exit(top, MINI_CAT).pack(side="left")
+    tk.Label(top, text="clipboard", bg="#202020", fg="#555",
+             font=("Arial", 9)).pack(side="left", padx=6)
+
+    container = tk.Frame(frame, bg="#202020")
+    container.pack(fill="both", expand=True, padx=6, pady=4)
+
+    _last_clip_snapshot = [None]
+
+    def build_rows():
+        for w in container.winfo_children():
+            w.destroy()
+        for item in reversed(clipboard_history):
+            row = tk.Frame(container, bg="#2B2B2B", pady=3)
+            row.pack(fill="x", padx=2, pady=2)
+            tk.Button(row, text="📋", bd=0, bg="#2B2B2B", fg="white",
+                      font=("Arial", 12), activebackground="#333",
+                      cursor="hand2",
+                      command=lambda t=item: (pyperclip.copy(t) if pyperclip else None)
+                      ).pack(side="right", padx=2)
+            preview = " ".join(item.splitlines())
+            if len(preview) > 22:
+                preview = preview[:22] + "..."
+            tk.Label(row, text=preview, bg="#2B2B2B", fg="white",
+                     font=("Arial", 13), anchor="w"
+                     ).pack(side="left", fill="x", expand=True, padx=4)
+
+    def refresh():
+        global _clip_refresh_id
+        if _mode_open != "clip":
+            return
+        snapshot = list(clipboard_history)
+        if snapshot != _last_clip_snapshot[0]:
+            _last_clip_snapshot[0] = snapshot
+            build_rows()
+        _clip_refresh_id = root.after(1000, refresh)
+
+    build_rows()
+    refresh()
+
+def _build_calc_ui(frame):
+    top = tk.Frame(frame, bg="#202020")
+    top.pack(fill="x", padx=6, pady=(6, 2))
+    _mini_neko_exit(top, MINI_CAT).pack(side="left")
+    tk.Label(top, text="calculator", bg="#202020", fg="#555",
+             font=("Arial", 9)).pack(side="left", padx=6)
+
+    # Display
+    disp_var = tk.StringVar(value="0")
+    disp = tk.Entry(frame, textvariable=disp_var,
+                    font=("Arial", 22, "bold"), bg="#2B2B2B", fg="white",
+                    insertbackground="white", bd=0, justify="right",
+                    highlightthickness=0, readonlybackground="#2B2B2B",
+                    state="readonly")
+    disp.pack(fill="x", padx=8, pady=(2, 6), ipady=10)
+
+    def copy_result():
+        val = disp_var.get()
+        if pyperclip:
+            pyperclip.copy(val)
+        sound_meow()
+
+    tk.Button(frame, text="copy result", command=copy_result,
+              bg="#333", fg="#aaa", bd=0, font=("Arial", 9),
+              activebackground="#444", cursor="hand2"
+              ).pack(anchor="e", padx=10, pady=(0, 4))
+
+    expr = [""]   # mutable expression buffer
+
+    def press(val):
+        cur = expr[0]
+        if val == "C":
+            expr[0] = ""
+            disp_var.set("0")
+            return
+        if val == "⌫":
+            expr[0] = cur[:-1]
+            disp_var.set(expr[0] if expr[0] else "0")
+            return
+        if val == "=":
+            try:
+                import math as _m
+                result = eval(
+                    expr[0]
+                    .replace("^", "**")
+                    .replace("√", "_m.sqrt"),
+                    {"__builtins__": {}, "_m": _m}
+                )
+                if isinstance(result, float) and result == int(result):
+                    result = int(result)
+                expr[0] = str(result)
+                disp_var.set(expr[0])
+            except Exception:
+                disp_var.set("error")
+                expr[0] = ""
+            return
+        if val == "±":
+            if expr[0].startswith("-"):
+                expr[0] = expr[0][1:]
+            elif expr[0]:
+                expr[0] = "-" + expr[0]
+            disp_var.set(expr[0] if expr[0] else "0")
+            return
+        if val == "%":
+            try:
+                expr[0] = str(eval(expr[0]) / 100)
+                disp_var.set(expr[0])
+            except Exception:
+                pass
+            return
+        expr[0] = cur + val
+        disp_var.set(expr[0])
+
+    btn_frame = tk.Frame(frame, bg="#202020")
+    btn_frame.pack(fill="both", expand=True, padx=6, pady=4)
+
+    BUTTONS = [
+        ["C",  "±",  "%",  "÷"],
+        ["7",  "8",  "9",  "×"],
+        ["4",  "5",  "6",  "−"],
+        ["1",  "2",  "3",  "+"],
+        ["√",  "0",  "⌫",  "="],
+    ]
+    OP_MAP = {"÷": "/", "×": "*", "−": "-", "+": "+"}
+
+    for r, row in enumerate(BUTTONS):
+        btn_frame.rowconfigure(r, weight=1)
+        for c, label in enumerate(row):
+            btn_frame.columnconfigure(c, weight=1)
+            is_eq = (label == "=")
+            is_op = label in OP_MAP or label in ("C", "±", "%", "√", "⌫")
+            bg   = "white"  if is_eq else ("#333" if is_op else "#2B2B2B")
+            fg   = "black"  if is_eq else "white"
+            abg  = "#ddd"   if is_eq else "#444"
+            raw  = OP_MAP.get(label, label)
+            tk.Button(btn_frame, text=label, command=lambda v=raw: press(v),
+                      bg=bg, fg=fg, bd=0, font=("Arial", 13, "bold"),
+                      activebackground=abg, cursor="hand2", relief="flat"
+                      ).grid(row=r, column=c, sticky="nsew", padx=2, pady=2)
+
 # ---------------------------------------------------------------------------
 # Hold-to-pick popup
 # ---------------------------------------------------------------------------
@@ -970,12 +1204,25 @@ btn.bind("<Button-3>",        on_cat_press_right)
 btn.bind("<Enter>",  on_hover)
 btn.bind("<Leave>",  off_hover)
 
-# Arrow toggle — left-aligned, tight
-arrow_btn = tk.Button(root, text="▼", command=toggle_panel,
+# Bottom bar: ▼ on left, 📋 🧮 on right
+_bar = tk.Frame(root, bg="#202020")
+_bar.pack(fill="x", padx=6, pady=0)
+
+arrow_btn = tk.Button(_bar, text="▼", command=toggle_panel,
                       bg="#202020", fg="#555", bd=0, font=("Arial", 8),
                       activebackground="#202020", activeforeground="#aaa",
                       cursor="hand2", pady=0, padx=0)
-arrow_btn.pack(anchor="w", padx=8, pady=0)
+arrow_btn.pack(side="left")
+
+calc_btn = tk.Button(_bar, text="÷", command=lambda: open_mode("calc"),
+                     bg="#202020", fg="#aaa", bd=0, font=("Arial", 13, "bold"),
+                     activebackground="#202020", cursor="hand2", pady=0, padx=2)
+calc_btn.pack(side="right")
+
+clip_btn = tk.Button(_bar, text="📋", command=lambda: open_mode("clip"),
+                     bg="#202020", fg="#aaa", bd=0, font=("Arial", 13, "bold"),
+                     activebackground="#202020", cursor="hand2", pady=0, padx=2)
+clip_btn.pack(side="right")
 
 # ---------------------------------------------------------------------------
 # Drag with momentum
@@ -991,7 +1238,7 @@ def _over(event, widget):
 
 def start_drag(event):
     global mouse_tracking_enabled
-    if _over(event, btn) or _over(event, arrow_btn):
+    if _over(event, btn) or _over(event, arrow_btn) or _over(event, clip_btn) or _over(event, calc_btn):
         return
     drag["active"] = True
     mouse_tracking_enabled = False
@@ -1072,8 +1319,11 @@ def track_mouse():
 # ---------------------------------------------------------------------------
 # Inactivity loop
 # ---------------------------------------------------------------------------
+_idle_state    = "normal"   # "normal" | "looking" | "sleepy"
+_idle_look_end = 0.0
+
 def check_inactivity():
-    global last_interaction_time
+    global last_interaction_time, _idle_state, _idle_look_end
     while True:
         time.sleep(1)
         t = time.time() - last_interaction_time
@@ -1081,14 +1331,29 @@ def check_inactivity():
             root.after(0, hop_animation)
         if 120 < t < 121 or 240 < t < 241:
             sound_meow()
-        if 25 < t < 40:
-            btn.config(text=get_cat_sprite("sleepy"))
-        elif t > 40:
+
+        now = time.time()
+
+        if t > 40:
             last_interaction_time = time.time()
+            _idle_state = "normal"
+        elif t > 20:
+            # Transition into idle if not already idle
+            if _idle_state == "normal":
+                if random.random() < 0.5:
+                    _idle_state    = "looking"
+                    _idle_look_end = now + 5      # looking for 5 seconds
+                else:
+                    _idle_state = "sleepy"
+            # If looking timer expired, graduate to sleepy
+            if _idle_state == "looking" and now >= _idle_look_end:
+                _idle_state = "sleepy"
+            root.after(0, lambda: btn.config(text=get_cat_sprite(_idle_state)))
         else:
+            _idle_state = "normal"
             cur = btn.cget("text")
             if cur != get_cat_sprite("hover"):
-                btn.config(text=get_cat_sprite("normal"))
+                root.after(0, lambda: btn.config(text=get_cat_sprite("normal")))
 
 # ---------------------------------------------------------------------------
 # Ctrl+P hide/show

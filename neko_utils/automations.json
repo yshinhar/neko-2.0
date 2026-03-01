@@ -1,0 +1,23 @@
+[
+  {
+    "name": "work time",
+    "trigger": {
+      "type": "neko_right_click",
+      "value": ""
+    },
+    "actions": [
+      {
+        "type": "open_url",
+        "value": "https://notebooklm.google.com/notebook/c77bf60e-6e32-41ae-9352-7fb1ea67f091"
+      },
+      {
+        "type": "open_url",
+        "value": "https://monday.com"
+      },
+      {
+        "type": "open_url",
+        "value": "https://github.com"
+      }
+    ]
+  }
+]
