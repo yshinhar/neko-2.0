@@ -28,6 +28,7 @@ except ImportError:
 current_dir      = os.path.dirname(os.path.abspath(__file__))
 UTILS_DIR        = os.path.join(current_dir, "neko_utils")
 AUTOMATIONS_FILE = os.path.join(UTILS_DIR, "automations.json")
+HISTORY_FILE     = os.path.join(UTILS_DIR, "history.json")
 
 pygame.mixer.init()
 meow      = pygame.mixer.Sound(os.path.join(UTILS_DIR, "meow.mp3"))
@@ -99,6 +100,25 @@ def get_trigger_types(auto):
 
 def get_trigger_value(auto):
     return auto.get("trigger", {}).get("value", "")
+
+# ---------------------------------------------------------------------------
+# History
+# ---------------------------------------------------------------------------
+def log_history(name, trigger_type):
+    os.makedirs(UTILS_DIR, exist_ok=True)
+    entry = {"ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+             "name": name, "trigger": trigger_type}
+    history = []
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            pass
+    history.append(entry)
+    history = history[-200:]
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2, ensure_ascii=False)
 
 # ---------------------------------------------------------------------------
 # Action execution
