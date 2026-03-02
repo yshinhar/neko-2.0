@@ -1,10 +1,12 @@
-## 🐱 neko - the cutest window assistant
+# neko
+## the cutest window assistant
 
+```
 ╱|
 (˚˕ 。7
 |、˜〵
 じしˍ,)ノ
-
+```
 
 **neko** is a small, always-on-top desktop window assistant written in **Python**.  
 It’s a lightweight container for **standalone power tools** like automation launchers, clipboard history, calculator, and quick utilities — all inside a single floating window.
@@ -17,12 +19,12 @@ The goal: **maximum usefulness, minimum space**.
 
 ### ⚙️ Automation (Main Feature)
 
-
+```
 ╱|    
 (`ˎ - 7
 |、˜〵
 じしˍ,)ノ
-
+```
 
 Turn neko into a **one-click automation hub** for your desktop.
 
@@ -43,11 +45,12 @@ Perfect for:
 
 ### 📋 Clipboard Manager
 
+```
      |╲
  < 。˕˚)
   / ˜  |
 ヽ(,ˍりり
-
+```
 
 A simple, no-nonsense clipboard tool built directly into neko.
 
@@ -62,12 +65,12 @@ Useful when you want clipboard history **without running a heavy background app*
 
 ### 🧮 Calculator
 
-
+```
 ╱|    
 (`˕ 。7
 |、˜〵
 じしˍ,)ノ
-
+```
 
 A quick calculator right inside neko:
 
@@ -80,12 +83,12 @@ A quick calculator right inside neko:
 
 ## 🪟 Non-Distracting / Friendly Behavior
 
-
+```
      zZ
 ╱|    
 (-ㅅ- 7
 (ˍ,     ˜ˍ,)ノ
-
+```
 
 neko is **designed to stay out of your way** while still being alive and interactive:
 
@@ -103,12 +106,12 @@ neko is **designed to stay out of your way** while still being alive and interac
 
 ## 🎨 UI & Liveliness
 
-
+```
 ╱|    
 (`˕ 。7
 |、˜〵
 じしˍ,)ノ
-
+```
 
 The UI emphasizes **minimalism and charm**:
 
@@ -151,10 +154,12 @@ The UI emphasizes **minimalism and charm**:
 
 ## 📦 Requirements
 
+```
 ╱|    
 (˚˕ 。7
 |、˜〵
 じしˍ,)ノ
+```
 
 * **Python 3.9+**  
 * **Windows**  
