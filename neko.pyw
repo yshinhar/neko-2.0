@@ -1,5 +1,5 @@
 # =============================================================================
-# neko.pyw — Minimal Automation Companion  (v6)
+# neko.pyw — Minimal Automation Companion
 # =============================================================================
 
 import tkinter as tk
@@ -28,7 +28,8 @@ except ImportError:
 current_dir      = os.path.dirname(os.path.abspath(__file__))
 UTILS_DIR        = os.path.join(current_dir, "neko_utils")
 AUTOMATIONS_FILE = os.path.join(UTILS_DIR, "automations.json")
-HISTORY_FILE     = os.path.join(UTILS_DIR, "history.json")
+HISTORY_FILE      = os.path.join(UTILS_DIR, "history.json")
+CALC_HIST_FILE    = os.path.join(UTILS_DIR, "calc_history.json")
 
 pygame.mixer.init()
 meow      = pygame.mixer.Sound(os.path.join(UTILS_DIR, "meow.mp3"))
@@ -308,6 +309,16 @@ threading.Thread(target=app_watch_loop, daemon=True).start()
 facing_right           = True
 mouse_tracking_enabled = True
 last_interaction_time  = time.time()
+
+_last_wake_time = time.time()
+
+def _wake():
+    """Restore full opacity and reset interaction timer."""
+    global last_interaction_time, _last_wake_time
+    last_interaction_time = time.time()
+    _last_wake_time = time.time()
+    root.attributes("-alpha", 1.0)
+
 hop_counter = hop_dx = hop_dy = 0
 
 normal_cat_l  = "╱|    \n(˚˕ 。7\n|、˜〵\n    じしˍ,)ノ"
@@ -446,7 +457,6 @@ _d2a = {v: k for k, v in ACTION_LABELS.items()}
 
 # Which triggers need a value field
 TRIG_NEEDS_VALUE = {"keybind", "app_opened", "app_closed", "time_of_day"}
-# Which actions need a value field (fullscreen_focused needs none)
 ACTION_NO_VALUE  = set()
 ACTION_NEEDS_APP = {"open_app", "close_app"}
 
@@ -820,21 +830,113 @@ def _build_clip_ui(frame):
     build_rows()
     refresh()
 
+# ---------------------------------------------------------------------------
+# Calc history persistence
+# ---------------------------------------------------------------------------
+def load_calc_history():
+    if os.path.exists(CALC_HIST_FILE):
+        try:
+            with open(CALC_HIST_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def save_calc_history(hist):
+    os.makedirs(UTILS_DIR, exist_ok=True)
+    with open(CALC_HIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(hist[-7:], f, ensure_ascii=False)
+
+calc_history = load_calc_history()
+
+# Unit conversion table: (label, from_unit, to_unit, factor_or_fn)
+UNIT_CATS = {
+    "Length": [
+        ("km → mi",   lambda x: x * 0.621371),
+        ("mi → km",   lambda x: x * 1.60934),
+        ("m → ft",    lambda x: x * 3.28084),
+        ("ft → m",    lambda x: x * 0.3048),
+        ("cm → in",   lambda x: x * 0.393701),
+        ("in → cm",   lambda x: x * 2.54),
+    ],
+    "Weight": [
+        ("kg → lb",   lambda x: x * 2.20462),
+        ("lb → kg",   lambda x: x * 0.453592),
+        ("g → oz",    lambda x: x * 0.035274),
+        ("oz → g",    lambda x: x * 28.3495),
+    ],
+    "Temp": [
+        ("°C → °F",   lambda x: x * 9/5 + 32),
+        ("°F → °C",   lambda x: (x - 32) * 5/9),
+        ("°C → K",    lambda x: x + 273.15),
+        ("K → °C",    lambda x: x - 273.15),
+    ],
+    "Speed": [
+        ("km/h → mph", lambda x: x * 0.621371),
+        ("mph → km/h", lambda x: x * 1.60934),
+        ("m/s → km/h", lambda x: x * 3.6),
+        ("km/h → m/s", lambda x: x / 3.6),
+    ],
+    "Area": [
+        ("m² → ft²",  lambda x: x * 10.7639),
+        ("ft² → m²",  lambda x: x * 0.092903),
+        ("km² → mi²", lambda x: x * 0.386102),
+        ("mi² → km²", lambda x: x * 2.58999),
+    ],
+    "Data": [
+        ("MB → GB",   lambda x: x / 1024),
+        ("GB → MB",   lambda x: x * 1024),
+        ("GB → TB",   lambda x: x / 1024),
+        ("TB → GB",   lambda x: x * 1024),
+    ],
+}
+
 def _build_calc_ui(frame):
+    # ── Sub-page state: "calc" | "history" | "convert" ──
+    page = ["calc"]
+    pages = {}
+
     top = tk.Frame(frame, bg="#202020")
     top.pack(fill="x", padx=6, pady=(6, 2))
     _mini_neko_exit(top, MINI_CAT).pack(side="left")
-    tk.Label(top, text="calculator", bg="#202020", fg="#555",
-             font=("Arial", 9)).pack(side="left", padx=6)
 
-    # Display
+    # Nav buttons top-right
+    nav = tk.Frame(top, bg="#202020")
+    nav.pack(side="right")
+
+    def _nav_btn(parent, txt, cmd):
+        return tk.Button(parent, text=txt, command=cmd,
+                         bg="#333", fg="white", bd=0, font=("Arial", 8, "bold"),
+                         activebackground="#555", cursor="hand2", padx=4, pady=1)
+
+    content = tk.Frame(frame, bg="#202020")
+    content.pack(fill="both", expand=True)
+
+    def show_page(name):
+        page[0] = name
+        for p in pages.values():
+            p.pack_forget()
+        pages[name].pack(fill="both", expand=True)
+
+    # ── CALC PAGE ─────────────────────────────────────────────────────────────
+    calc_page = tk.Frame(content, bg="#202020")
+    pages["calc"] = calc_page
+
     disp_var = tk.StringVar(value="0")
-    disp = tk.Entry(frame, textvariable=disp_var,
-                    font=("Arial", 22, "bold"), bg="#2B2B2B", fg="white",
+    disp = tk.Entry(calc_page, textvariable=disp_var,
+                    font=("Arial", 20, "bold"), bg="#2B2B2B", fg="white",
                     insertbackground="white", bd=0, justify="right",
-                    highlightthickness=0, readonlybackground="#2B2B2B",
-                    state="readonly")
-    disp.pack(fill="x", padx=8, pady=(2, 6), ipady=10)
+                    highlightthickness=0)
+    disp.pack(fill="x", padx=8, pady=(4, 2), ipady=8)
+    disp.focus_set()
+
+    expr = [""]
+
+    def _sync_from_entry(event=None):
+        expr[0] = disp_var.get()
+
+    disp.bind("<KeyRelease>", _sync_from_entry)
+    disp.bind("<Return>", lambda e: press("="))
 
     def copy_result():
         val = disp_var.get()
@@ -842,12 +944,11 @@ def _build_calc_ui(frame):
             pyperclip.copy(val)
         sound_meow()
 
-    tk.Button(frame, text="copy result", command=copy_result,
-              bg="#333", fg="#aaa", bd=0, font=("Arial", 9),
-              activebackground="#444", cursor="hand2"
-              ).pack(anchor="e", padx=10, pady=(0, 4))
-
-    expr = [""]   # mutable expression buffer
+    meta_row = tk.Frame(calc_page, bg="#202020")
+    meta_row.pack(fill="x", padx=8, pady=(0, 2))
+    tk.Button(meta_row, text="copy", command=copy_result,
+              bg="#333", fg="#aaa", bd=0, font=("Arial", 8),
+              activebackground="#444", cursor="hand2").pack(side="right")
 
     def press(val):
         cur = expr[0]
@@ -860,18 +961,27 @@ def _build_calc_ui(frame):
             disp_var.set(expr[0] if expr[0] else "0")
             return
         if val == "=":
+            raw_expr = expr[0]
             try:
                 import math as _m
                 result = eval(
-                    expr[0]
+                    raw_expr
                     .replace("^", "**")
+                    .replace("√(", "_m.sqrt(")
                     .replace("√", "_m.sqrt"),
-                    {"__builtins__": {}, "_m": _m}
+                    {"__builtins__": {}, "_m": _m, "pi": _m.pi, "e": _m.e}
                 )
                 if isinstance(result, float) and result == int(result):
                     result = int(result)
-                expr[0] = str(result)
-                disp_var.set(expr[0])
+                result_str = str(result)
+                # Save to history
+                entry = f"{raw_expr} = {result_str}"
+                calc_history.append(entry)
+                if len(calc_history) > 7:
+                    calc_history[:] = calc_history[-7:]
+                save_calc_history(calc_history)
+                expr[0] = result_str
+                disp_var.set(result_str)
             except Exception:
                 disp_var.set("error")
                 expr[0] = ""
@@ -892,33 +1002,164 @@ def _build_calc_ui(frame):
             return
         expr[0] = cur + val
         disp_var.set(expr[0])
+        disp.icursor(tk.END)
 
-    btn_frame = tk.Frame(frame, bg="#202020")
-    btn_frame.pack(fill="both", expand=True, padx=6, pady=4)
+    btn_frame = tk.Frame(calc_page, bg="#202020")
+    btn_frame.pack(fill="both", expand=True, padx=6, pady=2)
 
     BUTTONS = [
-        ["C",  "±",  "%",  "÷"],
-        ["7",  "8",  "9",  "×"],
-        ["4",  "5",  "6",  "−"],
-        ["1",  "2",  "3",  "+"],
-        ["√",  "0",  "⌫",  "="],
+        ["C",   "±",  "%",   "÷" ],
+        ["7",   "8",  "9",   "×" ],
+        ["4",   "5",  "6",   "−" ],
+        ["1",   "2",  "3",   "+" ],
+        [".",   "0",  "⌫",   "=" ],
+        ["√",  "x²", "(",   ")" ],
     ]
-    OP_MAP = {"÷": "/", "×": "*", "−": "-", "+": "+"}
+    OP_MAP = {"÷": "/", "×": "*", "−": "-", "+": "+", "x²": "**2"}
 
-    for r, row in enumerate(BUTTONS):
+    for r, row_btns in enumerate(BUTTONS):
         btn_frame.rowconfigure(r, weight=1)
-        for c, label in enumerate(row):
+        for c, label in enumerate(row_btns):
             btn_frame.columnconfigure(c, weight=1)
-            is_eq = (label == "=")
-            is_op = label in OP_MAP or label in ("C", "±", "%", "√", "⌫")
-            bg   = "white"  if is_eq else ("#333" if is_op else "#2B2B2B")
-            fg   = "black"  if is_eq else "white"
-            abg  = "#ddd"   if is_eq else "#444"
-            raw  = OP_MAP.get(label, label)
+            is_eq  = (label == "=")
+            is_op  = label in OP_MAP or label in ("C", "±", "%", "√", "⌫", "(", ")")
+            bg  = "white"  if is_eq else ("#333" if is_op else "#2B2B2B")
+            fg  = "black"  if is_eq else "white"
+            abg = "#ddd"   if is_eq else "#444"
+            raw = OP_MAP.get(label, label)
             tk.Button(btn_frame, text=label, command=lambda v=raw: press(v),
-                      bg=bg, fg=fg, bd=0, font=("Arial", 13, "bold"),
+                      bg=bg, fg=fg, bd=0, font=("Arial", 12, "bold"),
                       activebackground=abg, cursor="hand2", relief="flat"
                       ).grid(row=r, column=c, sticky="nsew", padx=2, pady=2)
+
+    # ── HISTORY PAGE ──────────────────────────────────────────────────────────
+    hist_page = tk.Frame(content, bg="#202020")
+    pages["history"] = hist_page
+
+    tk.Label(hist_page, text="history", bg="#202020", fg="#555",
+             font=("Arial", 9)).pack(anchor="w", padx=8, pady=(4, 2))
+
+    hist_container = tk.Frame(hist_page, bg="#202020")
+    hist_container.pack(fill="both", expand=True, padx=6)
+
+    def refresh_hist():
+        for w in hist_container.winfo_children():
+            w.destroy()
+        if not calc_history:
+            tk.Label(hist_container, text="no history yet", bg="#202020",
+                     fg="#555", font=("Arial", 10)).pack(pady=10)
+            return
+        for entry in reversed(calc_history):
+            row = tk.Frame(hist_container, bg="#2B2B2B", pady=3)
+            row.pack(fill="x", padx=2, pady=2)
+            tk.Button(row, text="📋", bd=0, bg="#2B2B2B", fg="white",
+                      font=("Arial", 11), activebackground="#333", cursor="hand2",
+                      command=lambda v=entry.split(" = ")[-1]: (
+                          pyperclip.copy(v) if pyperclip else None)
+                      ).pack(side="right", padx=2)
+            preview = entry if len(entry) <= 24 else entry[:24] + "..."
+            tk.Label(row, text=preview, bg="#2B2B2B", fg="white",
+                     font=("Arial", 10), anchor="w"
+                     ).pack(side="left", fill="x", expand=True, padx=4)
+
+    def show_hist():
+        refresh_hist()
+        show_page("history")
+
+    # ── CONVERT PAGE ──────────────────────────────────────────────────────────
+    conv_page = tk.Frame(content, bg="#202020")
+    pages["convert"] = conv_page
+
+    tk.Label(conv_page, text="unit converter", bg="#202020", fg="#555",
+             font=("Arial", 9)).pack(anchor="w", padx=8, pady=(4, 2))
+
+    conv_cat_var  = tk.StringVar(value=list(UNIT_CATS.keys())[0])
+    conv_conv_var = tk.StringVar()
+    conv_in_var   = tk.StringVar()
+    conv_out_var  = tk.StringVar(value="—")
+
+    cat_row = tk.Frame(conv_page, bg="#202020")
+    cat_row.pack(fill="x", padx=8, pady=2)
+
+    cat_cb = ttk.Combobox(cat_row, textvariable=conv_cat_var,
+                          values=list(UNIT_CATS.keys()),
+                          state="readonly", width=10, font=("Arial", 10))
+    cat_cb.pack(side="left", padx=(0, 4))
+
+    conv_cb = ttk.Combobox(cat_row, textvariable=conv_conv_var,
+                           state="readonly", width=11, font=("Arial", 10))
+    conv_cb.pack(side="left")
+
+    in_row = tk.Frame(conv_page, bg="#202020")
+    in_row.pack(fill="x", padx=8, pady=4)
+
+    conv_entry = tk.Entry(in_row, textvariable=conv_in_var,
+                          font=("Arial", 16, "bold"), bg="#2B2B2B", fg="white",
+                          insertbackground="white", bd=0, justify="right",
+                          highlightthickness=0, width=10)
+    conv_entry.pack(fill="x", ipady=6)
+
+    conv_result_lbl = tk.Label(conv_page, textvariable=conv_out_var,
+                               bg="#202020", fg="white",
+                               font=("Arial", 18, "bold"), anchor="e")
+    conv_result_lbl.pack(fill="x", padx=10, pady=2)
+
+    def _do_convert(event=None):
+        cat   = conv_cat_var.get()
+        label = conv_conv_var.get()
+        fn    = next((c[1] for c in UNIT_CATS[cat] if c[0] == label), None)
+        if fn is None:
+            conv_out_var.set("—")
+            return
+        try:
+            val    = float(conv_in_var.get())
+            result = fn(val)
+            if isinstance(result, float) and result == int(result):
+                result = int(result)
+            to_unit = label.split("→")[-1].strip()
+            conv_out_var.set(f"{result} {to_unit}")
+        except Exception:
+            conv_out_var.set("—")
+
+    def _update_conv_list(event=None):
+        cat = conv_cat_var.get()
+        labels = [c[0] for c in UNIT_CATS[cat]]
+        conv_cb["values"] = labels
+        conv_conv_var.set(labels[0])
+        _do_convert()
+
+    cat_cb.bind("<<ComboboxSelected>>", _update_conv_list)
+    conv_cb.bind("<<ComboboxSelected>>", lambda e: _do_convert())
+    conv_entry.bind("<KeyRelease>", lambda e: _do_convert())
+    _update_conv_list()
+
+    def copy_conv():
+        val = conv_out_var.get()
+        if val == "—":
+            return
+        if pyperclip:
+            pyperclip.copy(val)
+        sound_meow()
+        # Save to shared history: "label: input → result"
+        label = conv_conv_var.get()
+        raw   = conv_in_var.get().strip()
+        entry = f"{label}: {raw} → {val}"
+        calc_history.append(entry)
+        if len(calc_history) > 7:
+            calc_history[:] = calc_history[-7:]
+        save_calc_history(calc_history)
+
+    tk.Button(conv_page, text="copy", command=copy_conv,
+              bg="#333", fg="#aaa", bd=0, font=("Arial", 8),
+              activebackground="#444", cursor="hand2"
+              ).pack(anchor="e", padx=10, pady=2)
+
+    # ── Wire up nav buttons ───────────────────────────────────────────────────
+    _nav_btn(nav, "H", show_hist).pack(side="left", padx=1)
+    _nav_btn(nav, "↔", lambda: show_page("convert")).pack(side="left", padx=1)
+    _nav_btn(nav, "✕", lambda: show_page("calc")).pack(side="left", padx=1)
+
+    show_page("calc")
 
 # ---------------------------------------------------------------------------
 # Hold-to-pick popup
@@ -1147,7 +1388,7 @@ def _cancel_hold():
 
 def on_cat_press_left(event=None):
     global _hold_timer, _hold_fired, last_interaction_time, mouse_tracking_enabled
-    last_interaction_time  = time.time()
+    _wake()
     _hold_fired            = False
     mouse_tracking_enabled = False
     btn.config(text=get_cat_sprite("pressed"))
@@ -1176,7 +1417,7 @@ def on_cat_release_left(event=None):
 
 def on_cat_press_right(event=None):
     global last_interaction_time
-    last_interaction_time = time.time()
+    _wake()
     sound_meow()
     btn.config(text=get_cat_sprite("pressed"))
     root.after(120, lambda: btn.config(text=get_cat_sprite("normal")))
@@ -1191,7 +1432,7 @@ def on_hover(event):
 
 def off_hover(event):
     global last_interaction_time
-    last_interaction_time = time.time()
+    _wake()
     btn.config(text=get_cat_sprite("normal"))
 
 btn = tk.Label(root, text=get_cat_sprite("normal"),
@@ -1238,6 +1479,7 @@ def _over(event, widget):
 
 def start_drag(event):
     global mouse_tracking_enabled
+    _wake()
     if _over(event, btn) or _over(event, arrow_btn) or _over(event, clip_btn) or _over(event, calc_btn):
         return
     drag["active"] = True
@@ -1305,14 +1547,61 @@ def hop_animation():
 # ---------------------------------------------------------------------------
 def track_mouse():
     global facing_right, mouse_tracking_enabled
+    # Shake detection state
+    _shake_history = []   # list of (time, x)
+    _shake_cooldown = [0.0]
+
     while True:
-        time.sleep(0.1)
-        if not mouse_tracking_enabled or drag["active"]:
+        time.sleep(0.05)
+        if drag["active"]:
             continue
         try:
-            new_facing = root.winfo_pointerx() > root.winfo_x() + root.winfo_width()//2
-            if new_facing != facing_right:
-                facing_right = new_facing
+            mx = root.winfo_pointerx()
+            now = time.time()
+
+            # Facing direction
+            if mouse_tracking_enabled:
+                new_facing = mx > root.winfo_x() + root.winfo_width()//2
+                if new_facing != facing_right:
+                    facing_right = new_facing
+
+            # Shake detection — track last 0.4s of mouse x positions
+            _shake_history.append((now, mx))
+            _shake_history[:] = [(t, x) for t, x in _shake_history if now - t < 0.4]
+
+            if len(_shake_history) >= 4 and now > _shake_cooldown[0]:
+                xs = [x for _, x in _shake_history]
+                # Count direction reversals
+                reversals = 0
+                for i in range(1, len(xs) - 1):
+                    if (xs[i] - xs[i-1]) * (xs[i+1] - xs[i]) < 0:
+                        reversals += 1
+                # Total horizontal travel
+                travel = sum(abs(xs[i] - xs[i-1]) for i in range(1, len(xs)))
+                if reversals >= 3 and travel > 80:
+                    # Direction = vector from neko center to mouse
+                    try:
+                        neko_cx = root.winfo_x() + root.winfo_width()  // 2
+                        neko_cy = root.winfo_y() + root.winfo_height() // 2
+                        mouse_x = root.winfo_pointerx()
+                        mouse_y = root.winfo_pointery()
+                        dx = mouse_x - neko_cx
+                        dy = mouse_y - neko_cy
+                        dist = max(1, (dx**2 + dy**2) ** 0.5)
+                        # Speed = enough steps to cover dist + 25% overshoot
+                        # move_window decays by 0.92 each frame (16ms)
+                        # sum of geometric series: speed / (1-0.92) = speed / 0.08
+                        # so speed = dist * 0.08 * 1.25
+                        speed = dist * 0.08 * 1.25
+                        speed = max(12, min(speed, 80))  # clamp: never too weak or wild
+                        drag["vx"] = (dx / dist) * speed
+                        drag["vy"] = (dy / dist) * speed
+                    except Exception:
+                        drag["vx"] = random.choice([-28, 28])
+                        drag["vy"] = random.choice([-10, 0, 10])
+                    _shake_cooldown[0] = now + 1.5
+                    _shake_history.clear()
+                    root.after(0, move_window)
         except Exception:
             pass
 
@@ -1334,6 +1623,13 @@ def check_inactivity():
 
         now = time.time()
 
+        # Fade to transparent after 10s of real inactivity (immune to idle resets)
+        wake_age = time.time() - _last_wake_time
+        if wake_age > 10:
+            root.after(0, lambda: root.attributes("-alpha", 0.7))
+        else:
+            root.after(0, lambda: root.attributes("-alpha", 1.0))
+
         if t > 40:
             last_interaction_time = time.time()
             _idle_state = "normal"
@@ -1348,6 +1644,11 @@ def check_inactivity():
             # If looking timer expired, graduate to sleepy
             if _idle_state == "looking" and now >= _idle_look_end:
                 _idle_state = "sleepy"
+                # 40% chance: fling neko in a random direction when falling asleep
+                if random.random() < 0.4:
+                    drag["vx"] = random.choice([-22, -18, 18, 22])
+                    drag["vy"] = random.choice([-14, -10, 10, 14])
+                    root.after(0, move_window)
             root.after(0, lambda: btn.config(text=get_cat_sprite(_idle_state)))
         else:
             _idle_state = "normal"
