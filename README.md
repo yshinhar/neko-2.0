@@ -3,7 +3,7 @@
 
 ```
  ╱|
-(˚˕ 。 7
+(˚˕ 。7
 |、 ˜〵
 じしˍ,)ノ
 ```
@@ -21,7 +21,7 @@ The goal: **maximum usefulness, minimum space**.
 
 ```
  ╱|    
-(`ˎ -  7
+(`ˎ - 7
 |、 ˜〵
 じしˍ,)ノ
 ```
@@ -67,7 +67,7 @@ Useful when you want clipboard history **without running a heavy background app*
 
 ```
  ╱|    
-(`˕ 。 7
+(`˕ 。7
 |、 ˜〵
 じしˍ,)ノ
 ```
@@ -108,7 +108,7 @@ neko is **designed to stay out of your way** while still being alive and interac
 
 ```
  ╱|    
-(`˕ 。 7
+(`˕ 。7
 |、 ˜〵
 じしˍ,)ノ
 ```
@@ -156,7 +156,7 @@ The UI emphasizes **minimalism and charm**:
 
 ```
  ╱|    
-(˚˕ 。 7
+(˚˕ 。7
 |、 ˜〵
 じしˍ,)ノ
 ```
