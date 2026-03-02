@@ -1,99 +1,168 @@
-neko
+Nice project btw — this is already *good*, it just reads like raw notes instead of a “GitHub README that sells the vibe”. We’ll fix that 😼
 
-neko is a small always-on-top desktop window assistant written in Python.
-It acts as a container for simple standalone tools like a clipboard manager, automation launcher and calculator.
+Below is a **clean, polished README.md rewrite** with:
 
-The focus is on being lightweight, jam packed with utility and easy to extend.
+* Big bold section titles
+* Automation promoted as the **main feature**
+* Better flow + scannability
+* Still honest, lightweight, hacker-tool energy
 
-Features
+You can copy-paste this directly into `README.md`.
 
-Always-on-top floating window
+---
 
-Expand / collapse UI (ctrl+p)
+# 🐱 neko
 
-Multiple tool modes inside one window
+**neko** is a small, always-on-top desktop window assistant written in **Python**.
+It’s a lightweight container for **standalone power tools** like automation launchers, clipboard history, and quick utilities — all inside a single floating window.
 
-Clipboard
+The goal: **maximum usefulness, minimum bloat**.
 
-Read current clipboard content
+---
 
-Clipboard history
+## ✨ Core Features
 
-Re-copy previous entries
+### ⚙️ Automation (Main Feature)
 
-Optional persistence
+Turn neko into a **one-click automation hub** for your desktop.
 
-Automation
+* Run scripts or system commands
+* Bind actions to buttons or hotkeys
+* Chain actions with delays
+* Launch files, folders, and URLs
+* Trigger repetitive setup tasks instantly
 
-Run scripts or system commands
+Perfect for:
 
-Keyboard shortcuts
+* Opening workspaces
+* Running helper scripts
+* Repetitive desktop workflows
+* “I do this every day, why am I still clicking?” tasks
 
-Simple delays and sequences
+---
 
-Useful for repetitive desktop tasks
+### 📋 Clipboard Manager
 
-Utilities
+A simple, no-nonsense clipboard tool built directly into neko.
 
-Open files and folders
+* Read current clipboard content
+* Clipboard history
+* Re-copy previous entries with one click
+* Optional persistence between sessions
 
-Open URLs
+Useful when you want clipboard history **without running a heavy background app**.
 
-Keyboard input hooks
+---
 
-Basic system information
+### 🧰 Utilities
 
-Optional sound feedback
+Small tools that don’t deserve their own app — but are great together.
 
-Basic Use Cases
+* Open files and folders
+* Open URLs
+* Keyboard input hooks
+* Basic system information
+* Optional sound feedback for actions
 
-Keep a clipboard history without running a heavy background app
+---
 
-Launch small scripts or commands quickly
+## 🪟 UI Behavior
 
-Trigger repetitive actions from one place
+* Always-on-top floating window
+* Expand / collapse the UI (`Ctrl + P`)
+* Multiple tool modes inside a single window
+* Compact, fast, and unobtrusive
 
-Use a compact helper window instead of multiple separate tools
+---
 
-Examples
-Clipboard
+## 💡 Use Cases
 
-Copy text or code
+* Keep a clipboard history without installing a full clipboard manager
+* Launch scripts or commands instantly
+* Trigger repetitive actions from one place
+* Replace multiple tiny helper apps with one compact window
+* Build your own tools inside neko as you need them
 
-Open neko and see clipboard history
+---
 
-Click an entry to copy it again
+## 📸 Example Workflows
 
-Automation
+### Automation
 
-Bind a button to open a folder
+* Bind a button to open a project folder
+* Run a Python script with one click
+* Execute a startup sequence with delays
+* Open multiple apps in order
 
-Run a Python script with one click
+### Clipboard
 
-Trigger a sequence with delays (for setup tasks)
+* Copy text or code
+* Open neko to view clipboard history
+* Click an entry to copy it again
 
-Requirements
+---
 
-Python 3.9+
+## 📦 Requirements
 
-Windows
+* **Python 3.9+**
+* **Windows**
 
-Installation
-Clone the repository
+Python packages:
+
+* `keyboard`
+* `psutil`
+* `pygame`
+* `pyperclip`
+
+> Tkinter is included with most Python installations on Windows.
+
+---
+
+## 🚀 Installation
+
+```bash
 git clone https://github.com/YOUR_USERNAME/neko.git
 cd neko
-Install dependencies
 pip install keyboard psutil pygame pyperclip
+```
 
-Tkinter is included with most Python installations on Windows.
+Run the app:
 
-Running
+```bash
 python neko.pyw
+```
 
-The .pyw extension runs the app without opening a console window.
+> The `.pyw` extension runs neko without opening a console window.
 
-Project Structure
+---
 
-neko.pyw — main application
+## 🗂 Project Structure
 
-Internal modules handle UI, clipboard, and automation logic
+```
+neko.pyw        # Main application entry point
+/               # Internal modules for UI, clipboard, and automation
+```
+
+---
+
+## 🧪 Philosophy
+
+neko is:
+
+* Small
+* Always available
+* Easy to extend
+* Focused on real desktop productivity
+
+If it feels like a **floating toolbox you slowly customize over time**, it’s working.
+
+---
+
+If you want next steps, I can:
+
+* Add **badges** (Python version, platform, license)
+* Rewrite this in a more **chaotic hacker tone**
+* Help you design a **plugin / module system**
+* Make a short **“Why neko exists”** section
+
+Just say the word 😼
