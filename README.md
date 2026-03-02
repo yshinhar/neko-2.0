@@ -20,9 +20,9 @@ The goal: **maximum usefulness, minimum space**.
 ### ⚙️ Automation (Main Feature)
 
 ```
-╱|    
+ ╱|    
 (`ˎ - 7
-|、˜〵
+|、˜ 〵
 じしˍ,)ノ
 ```
 
@@ -87,7 +87,7 @@ A quick calculator right inside neko:
      zZ
 ╱|    
 (-ㅅ- 7
-(ˍ,     ˜ˍ,)ノ
+(ˍ,  ˜ˍ,)ノ
 ```
 
 neko is **designed to stay out of your way** while still being alive and interactive:
@@ -115,9 +115,9 @@ neko is **designed to stay out of your way** while still being alive and interac
 
 The UI emphasizes **minimalism and charm**:
 
-* **Minimalist layout** with only the essential controls  
-* **Black, gray, and white color palette** — clean and modern  
-* Loads of **cute expressions** — idle, looking, pressed, sleepy  
+* **Minimalist layout** 
+* **Black, gray, and white color palette**
+* Loads of **cute expressions**  
 * **Liveliness** — jumps, looks at the mouse, reacts to movement  
 * Animations make neko feel like a **tiny creature on your desktop**  
 
