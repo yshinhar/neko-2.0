@@ -1,22 +1,9 @@
-Nice project btw — this is already *good*, it just reads like raw notes instead of a “GitHub README that sells the vibe”. We’ll fix that 😼
-
-Below is a **clean, polished README.md rewrite** with:
-
-* Big bold section titles
-* Automation promoted as the **main feature**
-* Better flow + scannability
-* Still honest, lightweight, hacker-tool energy
-
-You can copy-paste this directly into `README.md`.
-
----
-
 # 🐱 neko
 
 **neko** is a small, always-on-top desktop window assistant written in **Python**.
-It’s a lightweight container for **standalone power tools** like automation launchers, clipboard history, and quick utilities — all inside a single floating window.
+It’s a lightweight container for **standalone power tools** like automation launchers, clipboard history, calculator and quick utilities — all inside a single floating window.
 
-The goal: **maximum usefulness, minimum bloat**.
+The goal: **maximum usefulness, minimum space**.
 
 ---
 
@@ -51,18 +38,6 @@ A simple, no-nonsense clipboard tool built directly into neko.
 * Optional persistence between sessions
 
 Useful when you want clipboard history **without running a heavy background app**.
-
----
-
-### 🧰 Utilities
-
-Small tools that don’t deserve their own app — but are great together.
-
-* Open files and folders
-* Open URLs
-* Keyboard input hooks
-* Basic system information
-* Optional sound feedback for actions
 
 ---
 
