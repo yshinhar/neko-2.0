@@ -66,7 +66,8 @@ Useful when you want clipboard history **without running a heavy background app*
 ### 🧮 Calculator
 
 ```
- ╱|   ? 
+     ?
+ ╱|   
 (`˕ 。7
 |、 ˜〵
 じしˍ,)ノ
