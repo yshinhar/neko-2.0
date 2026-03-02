@@ -1,8 +1,6 @@
 
-````markdown
-# neko
-
-```
+#neko - the cutest window assistant
+````
 ╱|    
 (˚˕ 。7
 |、˜〵
