@@ -1,5 +1,5 @@
 # =============================================================================
-# neko.pyw — Minimal Automation Companion
+# neko.pyw — Minimal Automation Companion  (v6)
 # =============================================================================
 
 import tkinter as tk
@@ -311,6 +311,7 @@ mouse_tracking_enabled = True
 last_interaction_time  = time.time()
 
 _last_wake_time = time.time()
+_mouse_over_window = False
 
 def _wake():
     """Restore full opacity and reset interaction timer."""
@@ -457,6 +458,7 @@ _d2a = {v: k for k, v in ACTION_LABELS.items()}
 
 # Which triggers need a value field
 TRIG_NEEDS_VALUE = {"keybind", "app_opened", "app_closed", "time_of_day"}
+# Which actions need a value field (fullscreen_focused needs none)
 ACTION_NO_VALUE  = set()
 ACTION_NEEDS_APP = {"open_app", "close_app"}
 
@@ -769,13 +771,20 @@ def open_mode(mode):
     _mode_open = mode
     btn.pack_forget()
     _bar.pack_forget()
-    root.geometry("200x360" if mode == "clip" else "200x320")
+    if mode == "clip":
+        root.geometry("200x360")
+    elif mode == "ms":
+        root.geometry("200x260")
+    else:
+        root.geometry("200x320")
 
     _mode_frame = tk.Frame(root, bg="#202020")
     _mode_frame.pack(fill="both", expand=True)
 
     if mode == "clip":
         _build_clip_ui(_mode_frame)
+    elif mode == "ms":
+        _build_ms_ui(_mode_frame)
     else:
         _build_calc_ui(_mode_frame)
 
@@ -890,6 +899,176 @@ UNIT_CATS = {
         ("TB → GB",   lambda x: x * 1024),
     ],
 }
+
+def _build_ms_ui(frame):
+    import random as _rnd
+
+    ROWS, COLS, MINES = 7 ,7, 7   # 7x7 grid, 7 mines — fits 200x260
+
+    # State: each cell = {"mine":bool, "revealed":bool, "flagged":bool, "adj":int}
+    board   = [[None]*COLS for _ in range(ROWS)]
+    cells   = [[None]*COLS for _ in range(ROWS)]  # tk Button refs
+    game_over = [False]
+    first_click = [True]
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    top = tk.Frame(frame, bg="#202020")
+    top.pack(fill="x", padx=6, pady=(4, 0))
+    _mini_neko_exit(top, MINI_CAT).pack(side="left")
+    mine_lbl = tk.Label(top, text="💣7", bg="#202020", fg="#aaa",
+                        font=("Arial", 9))
+    mine_lbl.pack(side="left", padx=(2,0))
+    status_lbl = tk.Label(top, text="", bg="#202020", fg="#aaa",
+                          font=("Arial", 9))
+    status_lbl.pack(side="left", padx=2)
+    restart_btn = tk.Button(top, text="🔄", command=lambda: new_game(),
+                            bg="#202020", fg="#aaa", bd=0, font=("Arial", 11),
+                            activebackground="#333", cursor="hand2")
+    restart_btn.pack(side="right")
+
+    grid_frame = tk.Frame(frame, bg="#202020")
+    grid_frame.pack(padx=4, pady=4)
+
+    def count_flags():
+        return sum(board[r][c]["flagged"] for r in range(ROWS) for c in range(COLS))
+
+    def update_mine_label():
+        mine_lbl.config(text=f"💣 {MINES - count_flags()}")
+
+    def init_board(safe_r, safe_c):
+        """Place mines after first click so first click is never a mine."""
+        # Reset
+        for r in range(ROWS):
+            for c in range(COLS):
+                board[r][c] = {"mine": False, "revealed": False,
+                               "flagged": False, "adj": 0}
+        # Place mines avoiding safe cell and its neighbours
+        safe = {(safe_r+dr, safe_c+dc)
+                for dr in range(-1, 2) for dc in range(-1, 2)}
+        candidates = [(r, c) for r in range(ROWS) for c in range(COLS)
+                      if (r, c) not in safe]
+        for r, c in _rnd.sample(candidates, min(MINES, len(candidates))):
+            board[r][c]["mine"] = True
+        # Compute adjacencies
+        for r in range(ROWS):
+            for c in range(COLS):
+                if not board[r][c]["mine"]:
+                    board[r][c]["adj"] = sum(
+                        board[r+dr][c+dc]["mine"]
+                        for dr in range(-1, 2) for dc in range(-1, 2)
+                        if 0 <= r+dr < ROWS and 0 <= c+dc < COLS
+                    )
+
+    ADJ_COLORS = ["", "#2196F3", "#4CAF50", "#f44336",
+                  "#9C27B0", "#FF5722", "#00BCD4", "#2196F3", "#666"]
+
+    def render_cell(r, c):
+        cell = board[r][c]
+        btn  = cells[r][c]
+        if cell["revealed"]:
+            if cell["mine"]:
+                btn.config(text="💣", bg="#cc3333", fg="white",
+                           font=("Arial", 8), relief="sunken")
+            elif cell["adj"] > 0:
+                btn.config(text=str(cell["adj"]),
+                           fg=ADJ_COLORS[cell["adj"]],
+                           bg="#2B2B2B", font=("Arial", 9, "bold"),
+                           relief="sunken")
+            else:
+                btn.config(text="", bg="#333", relief="sunken")
+        elif cell["flagged"]:
+            btn.config(text="🚩", fg = "white", bg="#202020", relief="raised",
+                       font=("Arial", 8))
+        else:
+            btn.config(text="", bg="#3a3a3a", relief="raised", font=("Arial", 9))
+
+    def reveal(r, c):
+        cell = board[r][c]
+        if cell["revealed"] or cell["flagged"]:
+            return
+        cell["revealed"] = True
+        render_cell(r, c)
+        if cell["adj"] == 0 and not cell["mine"]:
+            for dr in range(-1, 2):
+                for dc in range(-1, 2):
+                    nr, nc = r+dr, c+dc
+                    if 0 <= nr < ROWS and 0 <= nc < COLS:
+                        reveal(nr, nc)
+
+    def check_win():
+        for r in range(ROWS):
+            for c in range(COLS):
+                if not board[r][c]["mine"] and not board[r][c]["revealed"]:
+                    return False
+        return True
+
+    def on_left(r, c):
+        if game_over[0]:
+            return
+        if board[r][c]["flagged"]:
+            return
+        if first_click[0]:
+            first_click[0] = False
+            init_board(r, c)
+            render_all()
+        if board[r][c]["mine"]:
+            board[r][c]["revealed"] = True
+            render_cell(r, c)
+            game_over[0] = True
+            # Reveal all mines
+            for rr in range(ROWS):
+                for cc in range(COLS):
+                    if board[rr][cc]["mine"]:
+                        board[rr][cc]["revealed"] = True
+                        render_cell(rr, cc)
+            status_lbl.config(text="BOOM 💥", fg="#cc3333")
+            sound_meow()
+        else:
+            reveal(r, c)
+            if check_win():
+                game_over[0] = True
+                status_lbl.config(text="NICE 🎉", fg="#4CAF50")
+                sound_meow()
+
+    def on_right(r, c):
+        if game_over[0] or board[r][c]["revealed"]:
+            return
+        board[r][c]["flagged"] = not board[r][c]["flagged"]
+        render_cell(r, c)
+        update_mine_label()
+
+    def render_all():
+        for r in range(ROWS):
+            for c in range(COLS):
+                render_cell(r, c)
+
+    def new_game():
+        game_over[0]   = False
+        first_click[0] = True
+        # Reset board state
+        for r in range(ROWS):
+            for c in range(COLS):
+                board[r][c] = {"mine": False, "revealed": False,
+                               "flagged": False, "adj": 0}
+        render_all()
+        status_lbl.config(text="")
+        update_mine_label()
+
+    # ── Build grid buttons ────────────────────────────────────────────────────
+    for r in range(ROWS):
+        for c in range(COLS):
+            b = tk.Button(grid_frame, text="", width=2, height=1,
+                          bg="#3a3a3a", fg="white", bd=1,
+                          font=("Arial", 9, "bold"), relief="raised",
+                          cursor="hand2", activebackground="#555")
+            b.grid(row=r, column=c, padx=1, pady=1)
+            b.bind("<Button-1>", lambda e, r=r, c=c: on_left(r, c))
+            b.bind("<Button-3>", lambda e, r=r, c=c: on_right(r, c))
+            cells[r][c] = b
+
+
+
+    new_game()
 
 def _build_calc_ui(frame):
     # ── Sub-page state: "calc" | "history" | "convert" ──
@@ -1455,6 +1634,11 @@ arrow_btn = tk.Button(_bar, text="▼", command=toggle_panel,
                       cursor="hand2", pady=0, padx=0)
 arrow_btn.pack(side="left")
 
+ms_btn = tk.Button(_bar, text="🚩", command=lambda: open_mode("ms"),
+                   bg="#202020", fg="#aaa", bd=0, font=("Arial", 13, "bold"),
+                   activebackground="#202020", cursor="hand2", pady=0, padx=2)
+ms_btn.pack(side="right")
+
 calc_btn = tk.Button(_bar, text="÷", command=lambda: open_mode("calc"),
                      bg="#202020", fg="#aaa", bd=0, font=("Arial", 13, "bold"),
                      activebackground="#202020", cursor="hand2", pady=0, padx=2)
@@ -1480,7 +1664,7 @@ def _over(event, widget):
 def start_drag(event):
     global mouse_tracking_enabled
     _wake()
-    if _over(event, btn) or _over(event, arrow_btn) or _over(event, clip_btn) or _over(event, calc_btn):
+    if _over(event, btn) or _over(event, arrow_btn) or _over(event, clip_btn) or _over(event, calc_btn) or _over(event, ms_btn):
         return
     drag["active"] = True
     mouse_tracking_enabled = False
@@ -1529,6 +1713,9 @@ root.bind("<ButtonRelease-1>", release_drag)
 # ---------------------------------------------------------------------------
 def hop_animation():
     global hop_counter, hop_dx, hop_dy
+    if _mouse_over_window:
+        hop_counter = 0
+        return
     if hop_counter == 0:
         hop_dx = random.choice([10, -10])
         hop_dy = random.choice([10, -10])
@@ -1569,7 +1756,7 @@ def track_mouse():
             _shake_history.append((now, mx))
             _shake_history[:] = [(t, x) for t, x in _shake_history if now - t < 0.4]
 
-            if len(_shake_history) >= 4 and now > _shake_cooldown[0]:
+            if len(_shake_history) >= 6 and now > _shake_cooldown[0]:
                 xs = [x for _, x in _shake_history]
                 # Count direction reversals
                 reversals = 0
@@ -1623,9 +1810,9 @@ def check_inactivity():
 
         now = time.time()
 
-        # Fade to transparent after 10s of real inactivity (immune to idle resets)
+        # Fade to transparent after 10s — but never while mouse is over window
         wake_age = time.time() - _last_wake_time
-        if wake_age > 10:
+        if wake_age > 10 and not _mouse_over_window:
             root.after(0, lambda: root.attributes("-alpha", 0.7))
         else:
             root.after(0, lambda: root.attributes("-alpha", 1.0))
@@ -1645,7 +1832,7 @@ def check_inactivity():
             if _idle_state == "looking" and now >= _idle_look_end:
                 _idle_state = "sleepy"
                 # 40% chance: fling neko in a random direction when falling asleep
-                if random.random() < 0.4:
+                if random.random() < 0.4 and not _mouse_over_window:
                     drag["vx"] = random.choice([-22, -18, 18, 22])
                     drag["vy"] = random.choice([-14, -10, 10, 14])
                     root.after(0, move_window)
@@ -1675,5 +1862,17 @@ except Exception:
     pass
 
 keyboard.add_hotkey("ctrl+p", hotkey_toggle)
+
+def _on_mouse_enter(e=None):
+    global _mouse_over_window
+    _mouse_over_window = True
+    root.attributes("-alpha", 1.0)
+
+def _on_mouse_leave(e=None):
+    global _mouse_over_window
+    _mouse_over_window = False
+
+root.bind("<Enter>", _on_mouse_enter)
+root.bind("<Leave>", _on_mouse_leave)
 
 root.mainloop()
