@@ -3,8 +3,8 @@
 
 ```
  ╱|
-(˚˕ 。7
-|、˜〵
+(˚˕ 。 7
+|、 ˜〵
 じしˍ,)ノ
 ```
 
@@ -21,8 +21,8 @@ The goal: **maximum usefulness, minimum space**.
 
 ```
  ╱|    
-(`ˎ - 7
-|、˜〵
+(`ˎ -  7
+|、 ˜〵
 じしˍ,)ノ
 ```
 
@@ -66,9 +66,9 @@ Useful when you want clipboard history **without running a heavy background app*
 ### 🧮 Calculator
 
 ```
-╱|    
-(`˕ 。7
-|、˜〵
+ ╱|    
+(`˕ 。 7
+|、 ˜〵
 じしˍ,)ノ
 ```
 
@@ -85,9 +85,9 @@ A quick calculator right inside neko:
 
 ```
      zZ
-╱|    
+ ╱|    
 (-ㅅ- 7
-(ˍ, ˜ˍ,)ノ
+(ˍ,  ˜ˍ,)ノ
 ```
 
 neko is **designed to stay out of your way** while still being alive and interactive:
@@ -107,9 +107,9 @@ neko is **designed to stay out of your way** while still being alive and interac
 ## 🎨 UI & Liveliness
 
 ```
-╱|    
-(`˕ 。7
-|、˜〵
+ ╱|    
+(`˕ 。 7
+|、 ˜〵
 じしˍ,)ノ
 ```
 
@@ -155,9 +155,9 @@ The UI emphasizes **minimalism and charm**:
 ## 📦 Requirements
 
 ```
-╱|    
-(˚˕ 。7
-|、˜〵
+ ╱|    
+(˚˕ 。 7
+|、 ˜〵
 じしˍ,)ノ
 ```
 
