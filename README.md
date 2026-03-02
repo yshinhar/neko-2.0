@@ -1,7 +1,16 @@
-# 🐱 neko
+
+````markdown
+# neko
+
+```text
+╱|    
+(˚˕ 。7
+|、˜〵
+    じしˍ,)ノ
+````
 
 **neko** is a small, always-on-top desktop window assistant written in **Python**.
-It’s a lightweight container for **standalone power tools** like automation launchers, clipboard history, calculator and quick utilities — all inside a single floating window.
+It’s a lightweight container for **standalone power tools** like automation launchers, clipboard history, calculator, and quick utilities — all inside a single floating window.
 
 The goal: **maximum usefulness, minimum space**.
 
@@ -10,6 +19,13 @@ The goal: **maximum usefulness, minimum space**.
 ## ✨ Core Features
 
 ### ⚙️ Automation (Main Feature)
+
+```text
+╱|    
+(`ˎ - 7
+|、˜〵
+    じしˍ,)ノ
+```
 
 Turn neko into a **one-click automation hub** for your desktop.
 
@@ -30,6 +46,13 @@ Perfect for:
 
 ### 📋 Clipboard Manager
 
+```text
+    |╲
+< 。˕˚)
+ / ˜     |
+ヽ(,ˍりり
+```
+
 A simple, no-nonsense clipboard tool built directly into neko.
 
 * Read current clipboard content
@@ -41,7 +64,31 @@ Useful when you want clipboard history **without running a heavy background app*
 
 ---
 
+### 🧮 Calculator
+
+```text
+╱|    
+(`˕ 。7
+|、˜〵
+    じしˍ,)ノ
+```
+
+A quick calculator right inside neko:
+
+* Instant calculations
+* No extra windows
+* Always accessible
+
+---
+
 ## 🪟 UI Behavior
+
+```text
+     zZ
+╱|    
+(-ㅅ- 7
+       (ˍ,     ˜ˍ,)ノ
+```
 
 * Always-on-top floating window
 * Expand / collapse the UI (`Ctrl + P`)
@@ -114,30 +161,26 @@ python neko.pyw
 ## 🗂 Project Structure
 
 ```
-neko.pyw        # Main application entry point
-/               # Internal modules for UI, clipboard, and automation
+neko.pyw            # Main application entry point
+neko_utils/         # Internal modules for UI, clipboard, calculator, automation
+assets/             # Sprites and visual assets
 ```
 
 ---
 
-## 🧪 Philosophy
+## 🧠 Philosophy
+
+```text
+╱|    
+(˚˕ 。7
+|、˜〵
+    じしˍ,)ノ
+```
 
 neko is:
 
-* Small
-* Always available
-* Easy to extend
-* Focused on real desktop productivity
+* Cute but useful
+* Animated but lightweight
+* Powerful but minimal
 
-If it feels like a **floating toolbox you slowly customize over time**, it’s working.
-
----
-
-If you want next steps, I can:
-
-* Add **badges** (Python version, platform, license)
-* Rewrite this in a more **chaotic hacker tone**
-* Help you design a **plugin / module system**
-* Make a short **“Why neko exists”** section
-
-Just say the word 😼
+A tiny creature that quietly helps you run your desktop 🐱
