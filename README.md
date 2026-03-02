@@ -2,7 +2,7 @@
 ````markdown
 # neko
 
-```text
+```
 ╱|    
 (˚˕ 。7
 |、˜〵
@@ -20,7 +20,7 @@ The goal: **maximum usefulness, minimum space**.
 
 ### ⚙️ Automation (Main Feature)
 
-```text
+```
 ╱|    
 (`ˎ - 7
 |、˜〵
@@ -46,7 +46,7 @@ Perfect for:
 
 ### 📋 Clipboard Manager
 
-```text
+```
     |╲
 < 。˕˚)
  / ˜     |
@@ -66,7 +66,7 @@ Useful when you want clipboard history **without running a heavy background app*
 
 ### 🧮 Calculator
 
-```text
+```
 ╱|    
 (`˕ 。7
 |、˜〵
@@ -83,7 +83,7 @@ A quick calculator right inside neko:
 
 ## 🪟 UI Behavior
 
-```text
+```
      zZ
 ╱|    
 (-ㅅ- 7
@@ -163,24 +163,5 @@ python neko.pyw
 ```
 neko.pyw            # Main application entry point
 neko_utils/         # Internal modules for UI, clipboard, calculator, automation
-assets/             # Sprites and visual assets
 ```
 
----
-
-## 🧠 Philosophy
-
-```text
-╱|    
-(˚˕ 。7
-|、˜〵
-    じしˍ,)ノ
-```
-
-neko is:
-
-* Cute but useful
-* Animated but lightweight
-* Powerful but minimal
-
-A tiny creature that quietly helps you run your desktop 🐱
