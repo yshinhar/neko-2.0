@@ -9,7 +9,7 @@
 ```
 
 **neko** is a small, always-on-top desktop window assistant written in **Python**.  
-It’s a lightweight container for **standalone power tools** like automation launchers, clipboard history, calculator, and quick utilities — all inside a single floating window.
+It’s a lightweight container for **standalone power tools** like automation launchers, clipboard history, calculator, and even mindsweeper — all inside a single floating window.
 
 The goal: **maximum usefulness, minimum space**.
 
@@ -82,6 +82,31 @@ A quick calculator right inside neko:
 
 ---
 
+---
+
+### 💣 Minesweeper
+
+```
+     !
+ ╱|   
+(˚˕ 。7
+|、 ˜〵
+じしˍ,)ノ
+```
+
+A tiny built-in Minesweeper for when your brain needs a break.
+
+* 7 × 7 grid
+* Quick to start, quick to quit
+* Lives inside neko — no extra window
+
+Perfect for:
+* Waiting for something to run
+* Clearing your head between tasks
+* Having a game ready without installing one
+
+---
+
 ## 🪟 Non-Distracting / Friendly Behavior
 
 ```
@@ -110,14 +135,6 @@ neko is **designed to stay out of your way** while still being alive and interac
 
 https://github.com/user-attachments/assets/b7fd2aae-f6bb-4631-808e-b4a092565b58
 
-
-```
- ╱|    
-(`˕ 。7
-|、 ˜〵
-じしˍ,)ノ
-```
-
 The UI emphasizes **minimalism and charm**:
 
 * **Minimalist layout** 
@@ -142,18 +159,17 @@ The UI emphasizes **minimalism and charm**:
 
 ## 📸 Example Workflows
 
-### Automation
+```
+ ╱|    
+(`˕ 。7
+|、 ˜〵
+じしˍ,)ノ
+```
 
-* Bind a button to open a project folder  
-* Run a Python script with one click  
+* Bind a button to open an app 
+* Run scripts script with one click  
 * Execute a startup sequence with delays  
-* Open multiple apps in order  
-
-### Clipboard
-
-* Copy text or code  
-* Open neko to view clipboard history  
-* Click an entry to copy it again
+* Open multiple tabs and apps in order  
 
 ---
 
@@ -206,3 +222,8 @@ neko_utils/         # Internal modules for UI, clipboard, calculator, automation
 ```
 
 ---
+
+##🧠 Philosophy
+
+Its job is to be as helpful as possible and worth running in the background without being annoying.
+It should stay quiet, cute, and out of the way until you actually need it. and you will 😉
