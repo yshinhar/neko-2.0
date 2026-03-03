@@ -14,7 +14,7 @@ It’s a lightweight container for **standalone power tools** like automation la
 The goal: **maximum usefulness, minimum space**.
 
 
-[![neko in action]https://github.com/user-attachments/assets/6bf3c1bb-2868-4e21-8f61-d4a086e3efdf
+https://github.com/user-attachments/assets/7f6515a1-9e39-4f42-a6ba-4b34c191bca2
 
 ---
 
