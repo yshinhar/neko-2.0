@@ -13,6 +13,9 @@ It’s a lightweight container for **standalone power tools** like automation la
 
 The goal: **maximum usefulness, minimum space**.
 
+
+https://github.com/user-attachments/assets/6bf3c1bb-2868-4e21-8f61-d4a086e3efdf
+
 ---
 
 ## ✨ Core Features
@@ -79,8 +82,6 @@ A quick calculator right inside neko:
 * No extra windows
 * Conversion mode
 * Always accessible
-
----
 
 ---
 
