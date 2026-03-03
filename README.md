@@ -107,6 +107,10 @@ neko is **designed to stay out of your way** while still being alive and interac
 
 ## 🎨 UI & Liveliness
 
+
+https://github.com/user-attachments/assets/b7fd2aae-f6bb-4631-808e-b4a092565b58
+
+
 ```
  ╱|    
 (`˕ 。7
