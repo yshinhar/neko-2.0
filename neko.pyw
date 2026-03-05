@@ -329,12 +329,15 @@ normal_cat_l  = "╱|    \n(˚˕ 。7\n|、˜〵\n    じしˍ,)ノ"
 sleepy_cat_l  = "     zZ\n╱|    \n(-ㅅ- 7\n       (ˍ,     ˜ˍ,)ノ"
 hover_cat_l   = "╱|    \n(`˕ 。7\n|、˜〵\n    じしˍ,)ノ"
 pressed_cat_l = "╱|    \n(`ˎ - 7\n|、˜〵\n    じしˍ,)ノ"
+looking_cat_l = "╱|  ?\n(˚˕ 。7\n|、˜〵\n    じしˍ,)ノ"
+pet_cat_l    = "╱|  ♡\n(-ㅅ- 7\n|、˜〵\n    じしˍ,)ノ"
+
 normal_cat_r  = "    |╲\n< 。˕˚)\n/ ˜     |\nヽ(,ˍりり    "
 sleepy_cat_r  = "     zZ\n╱|    \n(-ㅅ- 7\n       (ˍ,     ˜ˍ,)ノ"
 hover_cat_r   = "    |╲\n< 。˕´)\n/ ˜     |\nヽ(,ˍりり    "
 pressed_cat_r = "    |╲\n< - ˎ´)\n/ ˜     |\nヽ(,ˍりり    "
-looking_cat_l = "╱|  ?\n(˚˕ 。7\n|、˜〵\n    じしˍ,)ノ"
 looking_cat_r = "╱|  ?\n(˚˕ 。7\n|、˜〵\n    じしˍ,)ノ"
+pet_cat_r     = "♡   |╲\n< -ㅅ-)\n/ ˜     |\nヽ(,ˍりり    "
 
 def get_cat_sprite(state):
     sprites = {
@@ -343,6 +346,7 @@ def get_cat_sprite(state):
         "hover":   (hover_cat_r,   hover_cat_l),
         "pressed": (pressed_cat_r, pressed_cat_l),
         "looking": (looking_cat_r, looking_cat_l),
+        "pet":     (pet_cat_r,     pet_cat_l),
     }
     r, l = sprites.get(state, sprites["normal"])
     return r if facing_right else l
@@ -1640,7 +1644,8 @@ def on_cat_release_left(event=None):
     global mouse_tracking_enabled
     mouse_tracking_enabled = True
     _cancel_hold()
-    btn.config(text=get_cat_sprite("normal"))
+    if _pet_after_id is None:
+        btn.config(text=get_cat_sprite("normal"))
     if _hold_fired:
         return
     sound_meow()
@@ -1663,11 +1668,15 @@ def on_cat_press_right(event=None):
         run_automation(right_autos[0], "neko_right_click")
 
 def on_hover(event):
+    if _pet_after_id is not None:
+        return
     btn.config(text=get_cat_sprite("hover"))
 
 def off_hover(event):
     global last_interaction_time
     _wake()
+    if _pet_after_id is not None:
+        return
     btn.config(text=get_cat_sprite("normal"))
 
 btn = tk.Label(root, text=get_cat_sprite("normal"),
@@ -1786,6 +1795,25 @@ def hop_animation():
         hop_counter = 0
 
 # ---------------------------------------------------------------------------
+# Pet sprite
+# ---------------------------------------------------------------------------
+def show_pet_sprite(mouse_x):
+    """Show pet sprite facing toward mouse, meow, reset after 2.5s."""
+    global facing_right, _pet_after_id
+    # Face toward the mouse
+    facing_right = mouse_x > root.winfo_x() + root.winfo_width() // 2
+    root.after(0, lambda: btn.config(text=get_cat_sprite("pet")))
+    root.after(0, sound_meow)
+    # Cancel any previous reset timer
+    if _pet_after_id is not None:
+        root.after_cancel(_pet_after_id)
+    def _reset_pet():
+        global _pet_after_id
+        _pet_after_id = None
+        root.after(0, lambda: btn.config(text=get_cat_sprite("normal")))
+    _pet_after_id = root.after(3000, _reset_pet)
+
+# ---------------------------------------------------------------------------
 # Mouse tracking
 # ---------------------------------------------------------------------------
 def track_mouse():
@@ -1844,7 +1872,11 @@ def track_mouse():
                         drag["vy"] = random.choice([-10, 0, 10])
                     _shake_cooldown[0] = now + 1.5
                     _shake_history.clear()
-                    root.after(0, move_window)
+                    _mxi = root.winfo_pointerx()
+                    if _mouse_over_window:
+                        root.after(0, lambda x=_mxi: show_pet_sprite(x))
+                    else:
+                        root.after(0, move_window)
         except Exception:
             pass
 
@@ -1853,6 +1885,7 @@ def track_mouse():
 # ---------------------------------------------------------------------------
 _idle_state    = "normal"   # "normal" | "looking" | "sleepy"
 _idle_look_end = 0.0
+_pet_after_id  = None       # after() id for pet sprite reset
 
 def check_inactivity():
     global last_interaction_time, _idle_state, _idle_look_end
@@ -1892,11 +1925,12 @@ def check_inactivity():
                     drag["vx"] = random.choice([-22, -18, 18, 22])
                     drag["vy"] = random.choice([-14, -10, 10, 14])
                     root.after(0, move_window)
-            root.after(0, lambda: btn.config(text=get_cat_sprite(_idle_state)))
+            if _pet_after_id is None:
+                root.after(0, lambda: btn.config(text=get_cat_sprite(_idle_state)))
         else:
             _idle_state = "normal"
             cur = btn.cget("text")
-            if cur != get_cat_sprite("hover"):
+            if cur != get_cat_sprite("hover") and _pet_after_id is None:
                 root.after(0, lambda: btn.config(text=get_cat_sprite("normal")))
 
 # ---------------------------------------------------------------------------
