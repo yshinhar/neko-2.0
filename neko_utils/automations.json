@@ -17,6 +17,10 @@
       {
         "type": "open_url",
         "value": "https://github.com"
+      },
+      {
+        "type": "open_url",
+        "value": "https://chatgpt.com/"
       }
     ]
   }

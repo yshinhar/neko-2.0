@@ -1,5 +1,5 @@
 # =============================================================================
-# neko.pyw — Minimal Automation Companion  (v6)
+# neko.pyw — Minimal Automation Companion 
 # =============================================================================
 
 import tkinter as tk
@@ -156,6 +156,9 @@ def run_action(action):
     try:
         if atype == "open_url":
             webbrowser.open(avalue)
+
+        elif atype == "search_google":
+            webbrowser.open(f"https://www.google.com/search?q={avalue.replace(' ', '+')}")
 
         elif atype == "open_app":
             subprocess.Popen(avalue, shell=True)
@@ -447,6 +450,7 @@ TRIGGER_LABELS = {
 }
 ACTION_LABELS = {
     "open_url":      "🌐  Open URL",
+    "search_google":  "🔍  Search Google",
     "open_app":      "📂  Open application",
     "close_app":     "✖  Close app",
     "set_volume":    "🔊  Set volume (0-100)",
@@ -774,7 +778,7 @@ def open_mode(mode):
     if mode == "clip":
         root.geometry("200x360")
     elif mode == "ms":
-        root.geometry("200x260")
+        root.geometry("200x290")
     else:
         root.geometry("200x320")
 
@@ -903,7 +907,7 @@ UNIT_CATS = {
 def _build_ms_ui(frame):
     import random as _rnd
 
-    ROWS, COLS, MINES = 7 ,7, 7   # 7x7 grid, 7 mines — fits 200x260
+    ROWS, COLS, MINES = 8, 8, 10  # 8x8 grid, 10 mines — classic beginner ratio
 
     # State: each cell = {"mine":bool, "revealed":bool, "flagged":bool, "adj":int}
     board   = [[None]*COLS for _ in range(ROWS)]
@@ -935,21 +939,7 @@ def _build_ms_ui(frame):
     def update_mine_label():
         mine_lbl.config(text=f"💣 {MINES - count_flags()}")
 
-    def init_board(safe_r, safe_c):
-        """Place mines after first click so first click is never a mine."""
-        # Reset
-        for r in range(ROWS):
-            for c in range(COLS):
-                board[r][c] = {"mine": False, "revealed": False,
-                               "flagged": False, "adj": 0}
-        # Place mines avoiding safe cell and its neighbours
-        safe = {(safe_r+dr, safe_c+dc)
-                for dr in range(-1, 2) for dc in range(-1, 2)}
-        candidates = [(r, c) for r in range(ROWS) for c in range(COLS)
-                      if (r, c) not in safe]
-        for r, c in _rnd.sample(candidates, min(MINES, len(candidates))):
-            board[r][c]["mine"] = True
-        # Compute adjacencies
+    def _compute_adj():
         for r in range(ROWS):
             for c in range(COLS):
                 if not board[r][c]["mine"]:
@@ -958,6 +948,71 @@ def _build_ms_ui(frame):
                         for dr in range(-1, 2) for dc in range(-1, 2)
                         if 0 <= r+dr < ROWS and 0 <= c+dc < COLS
                     )
+
+    def _has_5050():
+        """Detect obvious 50/50: two unrevealed cells share ALL their
+        constraining numbered neighbours, meaning either could be the mine
+        with no logical way to distinguish. We check for pairs of adjacent
+        unrevealed non-mine cells that are the *only* unknown neighbours of
+        every numbered cell that sees them."""
+        for r in range(ROWS):
+            for c in range(COLS):
+                if board[r][c]["mine"] or board[r][c]["adj"] == 0:
+                    continue
+                adj_val = board[r][c]["adj"]
+                # Unrevealed neighbours of this numbered cell
+                unknowns = [(r+dr, c+dc)
+                            for dr in range(-1, 2) for dc in range(-1, 2)
+                            if (dr, dc) != (0, 0)
+                            and 0 <= r+dr < ROWS and 0 <= c+dc < COLS
+                            and board[r+dr][c+dc]["mine"] is False
+                            and board[r+dr][c+dc]["adj"] >= 0]
+                mines_here = [(r+dr, c+dc)
+                              for dr in range(-1, 2) for dc in range(-1, 2)
+                              if (dr, dc) != (0, 0)
+                              and 0 <= r+dr < ROWS and 0 <= c+dc < COLS
+                              and board[r+dr][c+dc]["mine"]]
+                remaining = adj_val - len(mines_here)
+                non_mine_unknowns = [
+                    (nr, nc) for nr, nc in unknowns
+                    if not board[nr][nc]["mine"]
+                ]
+                # If exactly 2 unknown non-mine neighbours and 1 mine remaining
+                # and those 2 share identical constraint sets → 50/50
+                if remaining == 1 and len(non_mine_unknowns) == 2:
+                    (r1,c1), (r2,c2) = non_mine_unknowns
+                    # Check they share the same set of constraining cells
+                    def constraints(tr, tc):
+                        return frozenset(
+                            (r+dr, c+dc)
+                            for dr in range(-1,2) for dc in range(-1,2)
+                            if (dr,dc)!=(0,0)
+                            and 0<=r+dr<ROWS and 0<=c+dc<COLS
+                            and board[r+dr][c+dc]["adj"] > 0
+                            and not board[r+dr][c+dc]["mine"]
+                        )
+                    if constraints(r1,c1) == constraints(r2,c2):
+                        return True
+        return False
+
+    def init_board(safe_r, safe_c):
+        """Place mines after first click, retry up to 20 times to avoid 50/50s."""
+        safe = {(safe_r+dr, safe_c+dc)
+                for dr in range(-1, 2) for dc in range(-1, 2)}
+        candidates = [(r, c) for r in range(ROWS) for c in range(COLS)
+                      if (r, c) not in safe]
+        for _attempt in range(20):
+            # Reset board
+            for r in range(ROWS):
+                for c in range(COLS):
+                    board[r][c] = {"mine": False, "revealed": False,
+                                   "flagged": False, "adj": 0}
+            for r, c in _rnd.sample(candidates, min(MINES, len(candidates))):
+                board[r][c]["mine"] = True
+            _compute_adj()
+            if not _has_5050():
+                break
+        # Use last attempt regardless — best effort
 
     ADJ_COLORS = ["", "#2196F3", "#4CAF50", "#f44336",
                   "#9C27B0", "#FF5722", "#00BCD4", "#2196F3", "#666"]
@@ -1052,6 +1107,7 @@ def _build_ms_ui(frame):
                                "flagged": False, "adj": 0}
         render_all()
         status_lbl.config(text="")
+        mine_lbl.config(text=f"💣 {MINES}")
         update_mine_label()
 
     # ── Build grid buttons ────────────────────────────────────────────────────
