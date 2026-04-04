@@ -1764,7 +1764,7 @@ def move_window():
         if ny < 0:                          ny = 0;                         drag["vy"] = -drag["vy"]
         elif ny > screen_h - window_height: ny = screen_h - window_height; drag["vy"] = -drag["vy"]
         root.geometry(f"+{int(nx)}+{int(ny)}")
-        drag["vx"] *= 0.935;  drag["vy"] *= 0.935
+        drag["vx"] *= 0.92;  drag["vy"] *= 0.92
         if abs(drag["vx"]) > 0.1 or abs(drag["vy"]) > 0.1:
             root.after(16, step)
     step()
